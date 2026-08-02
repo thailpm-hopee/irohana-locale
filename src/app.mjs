@@ -36,21 +36,42 @@ export function deleteWord(s) {
 
 /**
  * Controlled single-line text input.
- * Handles typing, paste/drag, and quick-delete:
+ * Handles typing, paste/drag, quick-delete, and undo:
  *   - Backspace/Delete → remove one char
  *   - Ctrl+W or Option(Alt)+Delete → delete previous word (whole path if no spaces)
  *   - Ctrl+U (or Cmd+Delete when the terminal maps it to ^U) → clear the line
+ *   - Ctrl+Z → undo the last edit (restore just-deleted / typed characters)
+ *
+ * Undo history is kept per mount; give the component a stable `key` per input
+ * so history resets when moving to the next field.
  */
 export function TextField({ value, onChange, onSubmit }) {
+  const historyRef = useRef([]);
+
+  // Apply an edit, remembering the previous value so it can be undone.
+  const change = (next) => {
+    if (next !== value) {
+      historyRef.current.push(value);
+      if (historyRef.current.length > 500) historyRef.current.shift();
+    }
+    onChange(next);
+  };
+
   useInput((input, key) => {
     if (key.return) {
       onSubmit();
       return;
     }
 
+    // Undo the last edit (e.g. bring back characters cleared with Ctrl+U/W): Ctrl+Z.
+    if ((key.ctrl && input === 'z') || input === '\x1a') {
+      if (historyRef.current.length > 0) onChange(historyRef.current.pop());
+      return;
+    }
+
     // Clear the entire line: Ctrl+U (0x15). Some terminals map Cmd+Delete here.
     if ((key.ctrl && input === 'u') || input === '\x15') {
-      onChange('');
+      change('');
       return;
     }
 
@@ -60,12 +81,12 @@ export function TextField({ value, onChange, onSubmit }) {
       input === '\x17' ||
       (key.meta && (key.backspace || key.delete))
     ) {
-      onChange(deleteWord(value));
+      change(deleteWord(value));
       return;
     }
 
     if (key.backspace || key.delete) {
-      onChange(value.slice(0, -1));
+      change(value.slice(0, -1));
       return;
     }
 
@@ -73,7 +94,7 @@ export function TextField({ value, onChange, onSubmit }) {
     if (key.ctrl || key.meta || key.escape || key.upArrow || key.downArrow || key.leftArrow || key.rightArrow) {
       return;
     }
-    if (input) onChange(value + input);
+    if (input) change(value + input);
   });
 
   return html`
@@ -188,7 +209,7 @@ function InputScreen({ tool, input, index, total, draft, error, onChange, onSubm
             />`
           : html`<${Box}>
               <${Text} color="green">❯ <//>
-              <${TextField} value=${draft} onChange=${onChange} onSubmit=${onSubmit} />
+              <${TextField} key=${input.name} value=${draft} onChange=${onChange} onSubmit=${onSubmit} />
             <//>`}
       <//>
 
@@ -198,7 +219,7 @@ function InputScreen({ tool, input, index, total, draft, error, onChange, onSubm
         <${Text} color="gray">
           ${input.type === 'select'
             ? '↑/↓ chọn · Enter xác nhận'
-            : 'Enter xác nhận · Ctrl+W/Option+Delete xoá 1 từ · Ctrl+U xoá cả dòng · Ctrl+C thoát'}
+            : 'Enter xác nhận · Ctrl+W/Option+Delete xoá 1 từ · Ctrl+U xoá cả dòng · Ctrl+Z hoàn tác · Ctrl+C thoát'}
         <//>
       <//>
     <//>

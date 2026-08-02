@@ -75,7 +75,15 @@ Luồng thao tác:
 4. **Kết thúc:** hiện dấu `✔` (thành công) hoặc `✖` (lỗi) kèm đường dẫn kết quả.
    Nhấn `Enter` để về menu, `Ctrl+C` để thoát.
 
-**Phím tắt:** `↑`/`↓` di chuyển · `Enter` xác nhận · `Ctrl+C` thoát.
+**Phím tắt:**
+- Danh sách: `↑`/`↓` di chuyển · `Enter` xác nhận · `Ctrl+C` thoát.
+- Ô nhập đường dẫn:
+  - `Ctrl+W` hoặc `Option (Alt)+Delete` — xoá 1 từ (xoá cả đường dẫn nếu không có dấu cách)
+  - `Ctrl+U` — xoá cả dòng
+  - `Ctrl+Z` — **hoàn tác** ký tự vừa xoá (hoặc vừa gõ)
+
+> Lưu ý: trên macOS, `Cmd+Z`/`Cmd+Delete` thường không được terminal gửi tới ứng
+> dụng — hãy dùng `Ctrl+Z` để hoàn tác và `Ctrl+U` để xoá cả dòng.
 
 ---
 

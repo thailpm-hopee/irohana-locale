@@ -81,7 +81,8 @@ Luồng thao tác:
   - `←`/`→` hoặc `Ctrl+B`/`Ctrl+F` — di chuyển con trỏ
   - `Ctrl+A` / `Ctrl+E` — về đầu / cuối dòng
   - `Backspace` — xoá ký tự trước con trỏ; `Ctrl+D` — xoá ký tự tại con trỏ
-  - `Ctrl+W` hoặc `Option (Alt)+Delete` — xoá 1 từ trước con trỏ (xoá cả đường dẫn nếu không có dấu cách); `Alt+D` — xoá 1 từ sau con trỏ
+  - `Ctrl+W` — xoá 1 từ về khoảng trắng gần nhất (xoá cả đường dẫn nếu không có dấu cách)
+  - `Option (Alt)+Delete` — xoá **1 đoạn** trước con trỏ, phân tách bởi `/` `.` `-` `_`… Ví dụ: `a/b/c` → `a/b/` → `a/b` → `a/` → `a`. `Alt+D` — xoá 1 đoạn sau con trỏ
   - `Ctrl+U` — xoá cả dòng; `Ctrl+K` — xoá từ con trỏ đến cuối dòng
   - `Ctrl+Z` — **hoàn tác** thao tác vừa rồi (khôi phục ký tự vừa xoá/gõ)
 

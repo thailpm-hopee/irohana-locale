@@ -42,6 +42,31 @@ export function wordEnd(s, pos) {
   return i;
 }
 
+const isWordChar = (ch) => /\w/.test(ch); // [A-Za-z0-9_]
+
+/**
+ * Start of the "segment" before `pos`: a single maximal run of the same class
+ * of characters (word-chars vs separators). So separators like `/`, `.`, `-`
+ * are boundaries and a path is trimmed one piece at a time, e.g.
+ * "a/b/c" → "a/b/" → "a/b" → "a/" → "a".
+ */
+export function segmentStart(s, pos) {
+  if (pos <= 0) return 0;
+  const wordClass = isWordChar(s[pos - 1]);
+  let i = pos;
+  while (i > 0 && isWordChar(s[i - 1]) === wordClass) i--;
+  return i;
+}
+
+/** End of the "segment" after `pos` (mirror of segmentStart, moving forward). */
+export function segmentEnd(s, pos) {
+  if (pos >= s.length) return s.length;
+  const wordClass = isWordChar(s[pos]);
+  let i = pos;
+  while (i < s.length && isWordChar(s[i]) === wordClass) i++;
+  return i;
+}
+
 /**
  * Controlled single-line text input with a movable cursor — behaves like a
  * standard terminal (readline/emacs) line editor:
@@ -115,20 +140,27 @@ export function TextField({ value, onChange, onSubmit }) {
       return;
     }
 
-    // ── delete word before cursor: Ctrl+W / Option+Backspace ────────
-    if (
-      (key.ctrl && input === 'w') ||
-      input === '\x17' ||
-      (key.meta && (key.backspace || key.delete))
-    ) {
+    // ── delete word before cursor, whitespace-delimited: Ctrl+W ─────
+    // Like a terminal's unix-word-rubout: deletes back to the previous space
+    // (so a path with no spaces is removed in one go).
+    if ((key.ctrl && input === 'w') || input === '\x17') {
       const start = wordStart(value, cursor);
       edit(value.slice(0, start) + value.slice(cursor), start);
       return;
     }
 
-    // ── delete word after cursor: Alt+D ─────────────────────────────
+    // ── delete one segment before cursor: Option/Alt+Delete ─────────
+    // Separators (/, ., -, space, …) are boundaries, so "a/b/c" is trimmed
+    // one piece at a time: c → / → b → / → a.
+    if (key.meta && (key.backspace || key.delete)) {
+      const start = segmentStart(value, cursor);
+      edit(value.slice(0, start) + value.slice(cursor), start);
+      return;
+    }
+
+    // ── delete one segment after cursor: Alt+D ──────────────────────
     if (key.meta && input === 'd') {
-      const end = wordEnd(value, cursor);
+      const end = segmentEnd(value, cursor);
       edit(value.slice(0, cursor) + value.slice(end), cursor);
       return;
     }
@@ -277,7 +309,7 @@ function InputScreen({ tool, input, index, total, draft, error, onChange, onSubm
         <${Text} color="gray">
           ${input.type === 'select'
             ? '↑/↓ chọn · Enter xác nhận'
-            : '←/→ · Ctrl+A/E đầu/cuối · Ctrl+W/Option+Delete xoá từ · Ctrl+U xoá dòng · Ctrl+Z hoàn tác · Enter xác nhận'}
+            : '←/→ · Ctrl+A/E đầu/cuối · Option+Delete xoá 1 đoạn · Ctrl+W xoá từ · Ctrl+U xoá dòng · Ctrl+Z hoàn tác · Enter'}
         <//>
       <//>
     <//>

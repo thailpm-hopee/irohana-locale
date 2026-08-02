@@ -9,6 +9,11 @@ module.exports = {
   description:
     'Đọc file Excel dịch thuật, so sánh & áp dụng thay đổi vào các file locale (common.json), rồi format bằng Prettier.',
   entry: 'run.js',
+  order: 1,
+  // The report/output files (diff, report, notices, merged excel) are optional —
+  // the real result is the updated locale files. When the "keepReports" setting
+  // is off, these are written to a temp dir and discarded (no irl-output folder).
+  optionalOutputs: true,
   inputs: [
     {
       name: 'projectRoot',

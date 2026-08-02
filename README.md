@@ -64,6 +64,7 @@ irl
 Luồng thao tác:
 
 1. **Chọn công cụ** trong menu — dùng `↑`/`↓` để di chuyển, `Enter` để chọn.
+   Mục đầu tiên là **`⚙ Cài đặt`** (xem [Cài đặt](#cài-đặt-settings)).
 2. **Nhập dữ liệu đầu vào** theo từng bước:
    - **Thư mục / File:** *kéo-thả* thư mục hoặc file từ Finder vào terminal (đường
      dẫn đầy đủ sẽ tự điền, kể cả khi có dấu cách), rồi nhấn `Enter`. Đường dẫn
@@ -89,6 +90,20 @@ Luồng thao tác:
 > Lưu ý: trên macOS, `Cmd+Z`/`Cmd+Delete` thường không được terminal gửi tới ứng
 > dụng — hãy dùng `Ctrl+Z` để hoàn tác và `Ctrl+U` để xoá cả dòng.
 
+### Cài đặt (Settings)
+
+Chọn **`⚙ Cài đặt`** ở đầu menu (`↑`/`↓` di chuyển · `Enter`/`Space` bật-tắt ·
+`Esc` quay lại). Hiện có:
+
+- **Ghi file kết quả/báo cáo cho "Cập nhật i18n từ Excel"** — mặc định **tắt**.
+  Khi tắt, công cụ *chỉ cập nhật các dòng trong file locale*, **không** tạo thư
+  mục `irl-output` trong dự án (các file trung gian được ghi vào thư mục tạm và
+  xoá sau khi chạy). Bật nếu bạn muốn giữ lại report/diff/merged-excel.
+- **Công cụ hiển thị trong menu** — bật/tắt từng công cụ (mặc định bật tất cả;
+  luôn giữ ít nhất 1 công cụ được bật).
+
+Cài đặt lưu tại `~/.config/irohana-locale/settings.json`.
+
 ---
 
 ## Các công cụ (Tools)
@@ -107,8 +122,10 @@ quả vào `<thư-mục-dự-án>/irl-output/<tên-công-cụ>/`.
 | File Excel | file `.xlsx` | Kéo-thả file dịch thuật |
 | Bố cục Excel | lựa chọn | `paired` (2 cột/ngôn ngữ, mặc định) hoặc `single` (1 cột/ngôn ngữ) |
 
-**Kết quả** (`irl-output/i18n-update/`): các file `common.json` được cập nhật tại
-chỗ, `diff-full.json`, `diff-updates.json`, `update-report.md`,
+**Kết quả:** mặc định công cụ **chỉ cập nhật các file `common.json`** (tại chỗ) —
+không tạo thư mục `irl-output`. Nếu bật *Ghi file kết quả* trong
+[Cài đặt](#cài-đặt-settings), các file phụ được ghi vào `irl-output/i18n-update/`:
+`diff-full.json`, `diff-updates.json`, `update-report.md`,
 `i18n-transformed-check.md/.xlsx`, `notices.md`, và (bố cục `paired`)
 `localize_merged_YYYY-MM-DD.xlsx`.
 
@@ -163,6 +180,7 @@ node tools/find-unused-locale-keys/find-unused-keys.js [lang] \
 - **Kết quả:** `<thư-mục-dự-án>/irl-output/<tên-công-cụ>/`
 - **Cache đường dẫn gần nhất:** `~/.config/irohana-locale/cache.json`
   (hoặc `$XDG_CONFIG_HOME/irohana-locale/cache.json`).
+- **Cài đặt:** `~/.config/irohana-locale/settings.json`.
 
 ---
 

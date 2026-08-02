@@ -19,8 +19,7 @@ export function discoverTools() {
   const dirs = fs
     .readdirSync(TOOLS_DIR, { withFileTypes: true })
     .filter((d) => d.isDirectory() && !d.name.startsWith('_'))
-    .map((d) => d.name)
-    .sort();
+    .map((d) => d.name);
 
   const tools = [];
   for (const name of dirs) {
@@ -45,5 +44,13 @@ export function discoverTools() {
       });
     }
   }
+
+  // Explicit `order` (ascending) decides menu position; fall back to title.
+  tools.sort((a, b) => {
+    const oa = a.order ?? 999;
+    const ob = b.order ?? 999;
+    if (oa !== ob) return oa - ob;
+    return String(a.title).localeCompare(String(b.title));
+  });
   return tools;
 }

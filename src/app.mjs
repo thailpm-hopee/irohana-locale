@@ -6,11 +6,15 @@
  */
 import { render, Box, Text, useInput } from 'ink';
 import { useState, useEffect, useRef } from 'react';
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
 import { html } from './html.mjs';
 import { discoverTools } from './discover.mjs';
 import { getCached, setCached } from './cache.mjs';
 import { resolveAndValidate } from './paths.mjs';
 import { runTool, buildInvocation } from './runner.mjs';
+import { loadSettings, saveSettings } from './settings.mjs';
 
 const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 const MAX_LOG_LINES = 18;
@@ -252,21 +256,106 @@ function Header() {
   `;
 }
 
-function MenuScreen({ tools, onPick }) {
-  const items = tools.map((t) => ({
-    value: t.id,
-    label: t.title,
-    description: t.description,
-  }));
+function MenuScreen({ tools, onPick, onSettings }) {
+  const items = [
+    {
+      value: '__settings',
+      label: '⚙ Cài đặt',
+      description: 'Bật/tắt công cụ hiển thị · tuỳ chọn ghi file kết quả.',
+    },
+    ...tools.map((t) => ({ value: t.id, label: t.title, description: t.description })),
+  ];
   return html`
     <${Box} flexDirection="column">
       <${Header} />
       <${Text} bold>Chọn công cụ:<//>
       <${Box} marginTop=${1}>
-        <${SelectList} items=${items} onSelect=${(it, i) => onPick(tools[i])} />
+        <${SelectList}
+          items=${items}
+          onSelect=${(it) =>
+            it.value === '__settings' ? onSettings() : onPick(tools.find((t) => t.id === it.value))}
+        />
       <//>
+      ${tools.length === 0
+        ? html`<${Box} marginTop=${1}><${Text} color="yellow">Chưa có công cụ nào được bật — vào Cài đặt để bật.<//><//>`
+        : null}
       <${Box} marginTop=${1}>
         <${Text} color="gray">↑/↓ di chuyển · Enter chọn · Ctrl+C thoát<//>
+      <//>
+    <//>
+  `;
+}
+
+function SettingsScreen({ tools, settings, onChange, onDone }) {
+  // Flat list of interactive rows.
+  const actions = [
+    { kind: 'keepReports' },
+    ...tools.map((t) => ({ kind: 'tool', id: t.id, title: t.title })),
+    { kind: 'back' },
+  ];
+  const [idx, setIdx] = useState(0);
+
+  const isEnabled = (id) => !settings.disabledTools.includes(id);
+  const enabledCount = tools.filter((t) => isEnabled(t.id)).length;
+
+  function activate() {
+    const a = actions[idx];
+    if (a.kind === 'keepReports') {
+      onChange({ ...settings, keepReports: !settings.keepReports });
+    } else if (a.kind === 'tool') {
+      const disabled = new Set(settings.disabledTools);
+      if (disabled.has(a.id)) {
+        disabled.delete(a.id);
+      } else {
+        if (enabledCount <= 1) return; // keep at least one tool enabled
+        disabled.add(a.id);
+      }
+      onChange({ ...settings, disabledTools: [...disabled] });
+    } else {
+      onDone();
+    }
+  }
+
+  useInput((input, key) => {
+    if (key.upArrow || input === 'k') setIdx((i) => (i - 1 + actions.length) % actions.length);
+    else if (key.downArrow || input === 'j') setIdx((i) => (i + 1) % actions.length);
+    else if (key.return || input === ' ') activate();
+    else if (key.escape) onDone();
+  });
+
+  const checkbox = (on) => (on ? '[x]' : '[ ]');
+  const row = (active, text, color) =>
+    html`<${Text} color=${active ? 'cyan' : color} bold=${active}>${active ? '❯ ' : '  '}${text}<//>`;
+
+  let cursor = 0;
+  const keepReportsRow = row(
+    idx === cursor++,
+    `${checkbox(settings.keepReports)} Ghi file kết quả/báo cáo cho "Cập nhật i18n từ Excel"`
+  );
+
+  return html`
+    <${Box} flexDirection="column">
+      <${Header} />
+      <${Text} color="magenta" bold>⚙ Cài đặt<//>
+
+      <${Box} flexDirection="column" marginTop=${1}>
+        ${keepReportsRow}
+        <${Text} color="gray">      Tắt: chỉ cập nhật file locale, không tạo thư mục irl-output.<//>
+      <//>
+
+      <${Box} flexDirection="column" marginTop=${1}>
+        <${Text} bold>Công cụ hiển thị trong menu:<//>
+        ${tools.map((t) =>
+          row(idx === cursor++, `${checkbox(isEnabled(t.id))} ${t.title}`)
+        )}
+      <//>
+
+      <${Box} marginTop=${1}>
+        ${row(idx === cursor++, '← Lưu & quay lại menu')}
+      <//>
+
+      <${Box} marginTop=${1}>
+        <${Text} color="gray">↑/↓ di chuyển · Enter/Space bật-tắt · Esc quay lại<//>
       <//>
     <//>
   `;
@@ -364,9 +453,17 @@ export function App({ tools }) {
   const [error, setError] = useState(null);
   const [logs, setLogs] = useState([]);
   const [status, setStatus] = useState('running');
+  const [settings, setSettings] = useState(loadSettings);
   const childRef = useRef(null);
 
   const appendLog = (line) => setLogs((prev) => [...prev, line]);
+
+  const enabledTools = tools.filter((t) => !settings.disabledTools.includes(t.id));
+
+  function updateSettings(next) {
+    setSettings(next);
+    saveSettings(next);
+  }
 
   function pickTool(t) {
     if (t.broken) return;
@@ -413,10 +510,22 @@ export function App({ tools }) {
   }
 
   function startRun(t, collected) {
-    setLogs([]);
+    const { env, args } = buildInvocation(t, collected);
+    const initialLogs = [];
+
+    // For tools whose outputs are optional (e.g. i18n-update): unless the user
+    // opted to keep reports, route them to a temp dir and delete it afterwards,
+    // so the project gets no irl-output folder — only its locale files change.
+    let cleanupDir = null;
+    if (t.optionalOutputs && !settings.keepReports) {
+      cleanupDir = fs.mkdtempSync(path.join(os.tmpdir(), 'irl-out-'));
+      env.IRL_OUTPUT_DIR = cleanupDir;
+      initialLogs.push('ℹ️  Chế độ gọn: chỉ cập nhật file locale, không tạo thư mục irl-output.');
+    }
+
+    setLogs(initialLogs);
     setStatus('running');
     setScreen('running');
-    const { env, args } = buildInvocation(t, collected);
     childRef.current = runTool({
       entryPath: t.entryPath,
       cwd: t.dir,
@@ -424,6 +533,13 @@ export function App({ tools }) {
       env,
       onLine: appendLog,
       onExit: (code) => {
+        if (cleanupDir) {
+          try {
+            fs.rmSync(cleanupDir, { recursive: true, force: true });
+          } catch {
+            /* ignore */
+          }
+        }
         setStatus(code === 0 ? 'success' : 'error');
         setScreen('done');
       },
@@ -443,7 +559,19 @@ export function App({ tools }) {
   );
 
   if (screen === 'menu') {
-    return html`<${MenuScreen} tools=${tools} onPick=${pickTool} />`;
+    return html`<${MenuScreen}
+      tools=${enabledTools}
+      onPick=${pickTool}
+      onSettings=${() => setScreen('settings')}
+    />`;
+  }
+  if (screen === 'settings') {
+    return html`<${SettingsScreen}
+      tools=${tools}
+      settings=${settings}
+      onChange=${updateSettings}
+      onDone=${() => setScreen('menu')}
+    />`;
   }
   if (screen === 'input') {
     const input = tool.inputs[index];

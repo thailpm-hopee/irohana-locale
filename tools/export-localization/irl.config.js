@@ -9,6 +9,7 @@ module.exports = {
   description:
     'Gộp toàn bộ dữ liệu dịch (XLSX tổng hợp + JSON từng ngôn ngữ) thành localization.zip để bàn giao cho team dịch.',
   entry: 'run.js',
+  order: 2,
   inputs: [
     {
       name: 'projectRoot',

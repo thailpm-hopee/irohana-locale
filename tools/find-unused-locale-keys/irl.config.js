@@ -10,6 +10,7 @@ module.exports = {
   description:
     'Quét thư mục src/ để tìm các key trong file locale không còn được sử dụng. Xuất báo cáo Markdown + JSON.',
   entry: 'find-unused-keys.js',
+  order: 3,
   inputs: [
     {
       name: 'projectRoot',

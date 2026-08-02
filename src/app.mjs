@@ -258,12 +258,12 @@ function Header() {
 
 function MenuScreen({ tools, onPick, onSettings }) {
   const items = [
+    ...tools.map((t) => ({ value: t.id, label: t.title, description: t.description })),
     {
       value: '__settings',
       label: '⚙ Cài đặt',
       description: 'Bật/tắt công cụ hiển thị · tuỳ chọn ghi file kết quả.',
     },
-    ...tools.map((t) => ({ value: t.id, label: t.title, description: t.description })),
   ];
   return html`
     <${Box} flexDirection="column">

@@ -75,7 +75,24 @@ Luồng thao tác:
 4. **Kết thúc:** hiện dấu `✔` (thành công) hoặc `✖` (lỗi) kèm đường dẫn kết quả.
    Nhấn `Enter` để về menu, `Ctrl+C` để thoát.
 
-**Phím tắt:** `↑`/`↓` di chuyển · `Enter` xác nhận · `Ctrl+C` thoát.
+**Phím tắt:**
+- Danh sách: `↑`/`↓` di chuyển · `Enter` xác nhận · `Ctrl+C` thoát.
+- Ô nhập đường dẫn: `Ctrl+W` hoặc `Option (Alt)+Delete` xoá 1 từ (xoá cả đường
+  dẫn nếu không có dấu cách) · `Ctrl+U` xoá cả dòng.
+
+### Hoàn tác (Undo) — chống thao tác nhầm
+
+Với công cụ **ghi đè file dự án** (hiện tại là *Cập nhật i18n từ Excel*), trước
+mỗi lần chạy TUI tự **sao lưu** các file locale. Nếu chạy nhầm, bạn có thể khôi
+phục lại:
+
+- Ngay tại màn hình kết thúc: nhấn **`U`** để hoàn tác đúng lần chạy vừa rồi.
+- Hoặc từ menu chính: chọn **`↩ Hoàn tác thay đổi gần nhất`**, chọn bản sao lưu
+  cần khôi phục, rồi xác nhận.
+
+Luôn có bước xác nhận trước khi ghi đè (mặc định con trỏ nằm ở *Không* cho an
+toàn). Bản sao lưu lưu tại `~/.config/irohana-locale/backups/` (giữ tối đa 20 bản
+gần nhất), **không** đụng vào cây git của repo dự án.
 
 ---
 
@@ -99,6 +116,10 @@ quả vào `<thư-mục-dự-án>/irl-output/<tên-công-cụ>/`.
 chỗ, `diff-full.json`, `diff-updates.json`, `update-report.md`,
 `i18n-transformed-check.md/.xlsx`, `notices.md`, và (bố cục `paired`)
 `localize_merged_YYYY-MM-DD.xlsx`.
+
+> Vì công cụ này **ghi đè** file locale, TUI tự sao lưu trước khi chạy — dùng
+> **Hoàn tác** (phím `U` ở màn hình kết thúc, hoặc mục `↩` trong menu) để khôi
+> phục nếu chạy nhầm. Xem mục [Hoàn tác (Undo)](#hoàn-tác-undo--chống-thao-tác-nhầm).
 
 Chạy trực tiếp không cần TUI:
 
@@ -151,6 +172,8 @@ node tools/find-unused-locale-keys/find-unused-keys.js [lang] \
 - **Kết quả:** `<thư-mục-dự-án>/irl-output/<tên-công-cụ>/`
 - **Cache đường dẫn gần nhất:** `~/.config/irohana-locale/cache.json`
   (hoặc `$XDG_CONFIG_HOME/irohana-locale/cache.json`).
+- **Bản sao lưu để Hoàn tác:** `~/.config/irohana-locale/backups/` (index tại
+  `backups.json`, giữ tối đa 20 bản gần nhất).
 
 ---
 

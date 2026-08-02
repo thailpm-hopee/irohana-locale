@@ -11,6 +11,7 @@ import { discoverTools } from './discover.mjs';
 import { getCached, setCached } from './cache.mjs';
 import { resolveAndValidate } from './paths.mjs';
 import { runTool, buildInvocation } from './runner.mjs';
+import { createBackup, listBackups, restoreBackup, describeBackup } from './backup.mjs';
 
 const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 const MAX_LOG_LINES = 18;
@@ -85,7 +86,7 @@ export function TextField({ value, onChange, onSubmit }) {
 }
 
 /** Vertical selectable list. items: [{label, value, description?}] */
-function SelectList({ items, initialIndex = 0, onSelect }) {
+export function SelectList({ items, initialIndex = 0, onSelect }) {
   const [idx, setIdx] = useState(
     Math.min(Math.max(initialIndex, 0), Math.max(items.length - 1, 0))
   );
@@ -141,18 +142,33 @@ function Header() {
   `;
 }
 
-function MenuScreen({ tools, onPick }) {
-  const items = tools.map((t) => ({
+function MenuScreen({ tools, backupsCount, onPick, onUndo }) {
+  const undoItem =
+    backupsCount > 0
+      ? [
+          {
+            value: '__undo',
+            label: `↩ Hoàn tác thay đổi gần nhất (${backupsCount} bản sao lưu)`,
+            description: 'Khôi phục lại file locale từ bản sao lưu trước khi chạy.',
+          },
+        ]
+      : [];
+  const toolItems = tools.map((t) => ({
     value: t.id,
     label: t.title,
     description: t.description,
   }));
+  const items = [...undoItem, ...toolItems];
+
   return html`
     <${Box} flexDirection="column">
       <${Header} />
       <${Text} bold>Chọn công cụ:<//>
       <${Box} marginTop=${1}>
-        <${SelectList} items=${items} onSelect=${(it, i) => onPick(tools[i])} />
+        <${SelectList}
+          items=${items}
+          onSelect=${(it) => (it.value === '__undo' ? onUndo() : onPick(tools.find((t) => t.id === it.value)))}
+        />
       <//>
       <${Box} marginTop=${1}>
         <${Text} color="gray">↑/↓ di chuyển · Enter chọn · Ctrl+C thoát<//>
@@ -222,7 +238,7 @@ function RunningScreen({ tool, logs }) {
   `;
 }
 
-function DoneScreen({ tool, status, logs }) {
+function DoneScreen({ tool, status, logs, canUndo }) {
   const ok = status === 'success';
   const tail = logs.slice(-MAX_LOG_LINES);
   return html`
@@ -233,6 +249,80 @@ function DoneScreen({ tool, status, logs }) {
       <//>
       <${Box} flexDirection="column" marginTop=${1} borderStyle="round" borderColor=${ok ? 'green' : 'red'} paddingX=${1}>
         ${tail.map((l, i) => html`<${Text} key=${i} wrap="truncate-end">${l || ' '}<//>`)}
+      <//>
+      <${Box} marginTop=${1}>
+        <${Text} color="gray">
+          Enter để về menu · ${canUndo ? 'U để hoàn tác lần chạy này · ' : ''}Ctrl+C để thoát
+        <//>
+      <//>
+    <//>
+  `;
+}
+
+function UndoListScreen({ backups, onSelect, onBack }) {
+  const items = [
+    ...backups.map((b) => ({ value: b.id, label: describeBackup(b) })),
+    { value: '__back', label: '← Quay lại menu' },
+  ];
+  return html`
+    <${Box} flexDirection="column">
+      <${Header} />
+      <${Text} color="magenta" bold>↩ Hoàn tác — chọn bản sao lưu để khôi phục<//>
+      <${Box} marginTop=${1}>
+        <${SelectList}
+          items=${items}
+          onSelect=${(it) =>
+            it.value === '__back' ? onBack() : onSelect(backups.find((b) => b.id === it.value))}
+        />
+      <//>
+      <${Box} marginTop=${1}>
+        <${Text} color="gray">↑/↓ chọn · Enter xác nhận · Ctrl+C thoát<//>
+      <//>
+    <//>
+  `;
+}
+
+function UndoConfirmScreen({ entry, onConfirm, onCancel }) {
+  const items = [
+    { value: 'no', label: 'Không, quay lại' },
+    { value: 'yes', label: 'Có, khôi phục (GHI ĐÈ file hiện tại)' },
+  ];
+  return html`
+    <${Box} flexDirection="column">
+      <${Header} />
+      <${Text} color="magenta" bold>↩ Xác nhận hoàn tác<//>
+      <${Box} flexDirection="column" marginTop=${1}>
+        <${Text}>Công cụ:  <${Text} bold>${entry.toolTitle}<//><//>
+        <${Text}>Thời điểm: ${describeBackup(entry).split(' · ')[1]}<//>
+        <${Text}>Dự án:    ${entry.projectRoot}<//>
+        <${Text}>Khôi phục: ${entry.paths.join(', ')}<//>
+      <//>
+      <${Box} marginTop=${1}>
+        <${Text} color="yellow">⚠ Thao tác này sẽ GHI ĐÈ file hiện tại bằng bản sao lưu.<//>
+      <//>
+      <${Box} marginTop=${1}>
+        <${SelectList}
+          items=${items}
+          onSelect=${(it) => (it.value === 'yes' ? onConfirm() : onCancel())}
+        />
+      <//>
+    <//>
+  `;
+}
+
+function UndoResultScreen({ result }) {
+  const ok = result.ok;
+  return html`
+    <${Box} flexDirection="column">
+      <${Box}>
+        <${Text} color=${ok ? 'green' : 'red'} bold>${ok ? '✔' : '✖'}<//>
+        <${Text} bold> ${ok ? 'Đã hoàn tác' : 'Hoàn tác thất bại'}<//>
+      <//>
+      <${Box} flexDirection="column" marginTop=${1} borderStyle="round" borderColor=${ok ? 'green' : 'red'} paddingX=${1}>
+        ${ok
+          ? html`<${Text}>Đã khôi phục ${result.restored} mục: ${result.entry.paths.join(', ')}<//>`
+          : html`<${Text} color="red">${result.error}<//>`}
+        <${Text} color="gray">Dự án: ${result.entry.projectRoot}<//>
       <//>
       <${Box} marginTop=${1}>
         <${Text} color="gray">Enter để về menu · Ctrl+C để thoát<//>
@@ -253,6 +343,10 @@ export function App({ tools }) {
   const [error, setError] = useState(null);
   const [logs, setLogs] = useState([]);
   const [status, setStatus] = useState('running');
+  const [lastRunBackup, setLastRunBackup] = useState(null); // backup for the current run
+  const [backups, setBackups] = useState([]); // list shown on the undo screen
+  const [selectedBackup, setSelectedBackup] = useState(null);
+  const [undoResult, setUndoResult] = useState(null);
   const childRef = useRef(null);
 
   const appendLog = (line) => setLogs((prev) => [...prev, line]);
@@ -302,7 +396,21 @@ export function App({ tools }) {
   }
 
   function startRun(t, collected) {
-    setLogs([]);
+    // Snapshot project files before a mutating run so it can be undone.
+    let runBackup = null;
+    const initialLogs = [];
+    if (t.backup && t.backup.length) {
+      try {
+        runBackup = createBackup(t, collected.projectRoot);
+        if (runBackup) {
+          initialLogs.push(`🗂  Đã sao lưu ${runBackup.paths.join(', ')} trước khi chạy (có thể Hoàn tác).`);
+        }
+      } catch (e) {
+        initialLogs.push(`⚠️  Không sao lưu được trước khi chạy: ${e.message}`);
+      }
+    }
+    setLastRunBackup(runBackup);
+    setLogs(initialLogs);
     setStatus('running');
     setScreen('running');
     const { env, args } = buildInvocation(t, collected);
@@ -319,20 +427,78 @@ export function App({ tools }) {
     });
   }
 
-  // Global "return to menu" on the done screen.
+  function openUndo() {
+    setBackups(listBackups());
+    setScreen('undoList');
+  }
+
+  function goMenu() {
+    setTool(null);
+    setLogs([]);
+    setSelectedBackup(null);
+    setUndoResult(null);
+    setScreen('menu');
+  }
+
+  function doRestore(entry) {
+    try {
+      const r = restoreBackup(entry);
+      setUndoResult({ ok: true, restored: r.restored, entry });
+    } catch (e) {
+      setUndoResult({ ok: false, error: e.message, entry });
+    }
+    setScreen('undoResult');
+  }
+
+  // Done screen: Enter → menu; U → undo this run's backup (if any).
   useInput(
     (input, key) => {
-      if (screen === 'done' && key.return) {
-        setTool(null);
-        setLogs([]);
-        setScreen('menu');
+      if (screen !== 'done') return;
+      if (key.return) {
+        goMenu();
+      } else if ((input === 'u' || input === 'U') && lastRunBackup) {
+        setSelectedBackup(lastRunBackup);
+        setScreen('undoConfirm');
       }
     },
     { isActive: screen === 'done' }
   );
 
+  // Undo result screen: Enter → menu.
+  useInput(
+    (input, key) => {
+      if (screen === 'undoResult' && key.return) goMenu();
+    },
+    { isActive: screen === 'undoResult' }
+  );
+
   if (screen === 'menu') {
-    return html`<${MenuScreen} tools=${tools} onPick=${pickTool} />`;
+    return html`<${MenuScreen}
+      tools=${tools}
+      backupsCount=${listBackups().length}
+      onPick=${pickTool}
+      onUndo=${openUndo}
+    />`;
+  }
+  if (screen === 'undoList') {
+    return html`<${UndoListScreen}
+      backups=${backups}
+      onSelect=${(entry) => {
+        setSelectedBackup(entry);
+        setScreen('undoConfirm');
+      }}
+      onBack=${goMenu}
+    />`;
+  }
+  if (screen === 'undoConfirm') {
+    return html`<${UndoConfirmScreen}
+      entry=${selectedBackup}
+      onConfirm=${() => doRestore(selectedBackup)}
+      onCancel=${goMenu}
+    />`;
+  }
+  if (screen === 'undoResult') {
+    return html`<${UndoResultScreen} result=${undoResult} />`;
   }
   if (screen === 'input') {
     const input = tool.inputs[index];
@@ -351,7 +517,12 @@ export function App({ tools }) {
   if (screen === 'running') {
     return html`<${RunningScreen} tool=${tool} logs=${logs} />`;
   }
-  return html`<${DoneScreen} tool=${tool} status=${status} logs=${logs} />`;
+  return html`<${DoneScreen}
+    tool=${tool}
+    status=${status}
+    logs=${logs}
+    canUndo=${!!lastRunBackup}
+  />`;
 }
 
 // ── entry ───────────────────────────────────────────────────────────────────

@@ -1,0 +1,4 @@
+node_modules/
+irl-output/
+*.log
+.DS_Store

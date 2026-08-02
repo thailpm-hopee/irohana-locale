@@ -1,0 +1,44 @@
+{
+  "name": "irohana-locale",
+  "version": "1.0.0",
+  "description": "Công cụ TUI tương tác cho các script địa phương hoá (localization) của dự án irohana-study. Chọn công cụ từ menu, kéo-thả file/thư mục, xem log trực tiếp.",
+  "keywords": [
+    "irohana",
+    "i18n",
+    "localization",
+    "locale",
+    "tui",
+    "cli"
+  ],
+  "license": "UNLICENSED",
+  "private": true,
+  "type": "commonjs",
+  "bin": {
+    "irl": "bin/irl.mjs",
+    "irohana-locale": "bin/irl.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "files": [
+    "bin",
+    "src",
+    "tools",
+    "README.md"
+  ],
+  "scripts": {
+    "start": "node bin/irl.mjs"
+  },
+  "dependencies": {
+    "archiver": "^7.0.1",
+    "exceljs": "^4.4.0",
+    "htm": "^3.1.1",
+    "ink": "^7.1.1",
+    "jszip": "^3.10.1",
+    "react": "^19.0.0",
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "ink-testing-library": "^4.0.0"
+  }
+}

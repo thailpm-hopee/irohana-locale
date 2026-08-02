@@ -9,9 +9,6 @@ module.exports = {
   description:
     'Đọc file Excel dịch thuật, so sánh & áp dụng thay đổi vào các file locale (common.json), rồi format bằng Prettier.',
   entry: 'run.js',
-  // Project-relative paths snapshotted before each run so the change can be
-  // undone (this tool overwrites locale files in place).
-  backup: ['src/i18n/locales'],
   inputs: [
     {
       name: 'projectRoot',

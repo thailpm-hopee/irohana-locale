@@ -77,10 +77,13 @@ Luồng thao tác:
 
 **Phím tắt:**
 - Danh sách: `↑`/`↓` di chuyển · `Enter` xác nhận · `Ctrl+C` thoát.
-- Ô nhập đường dẫn:
-  - `Ctrl+W` hoặc `Option (Alt)+Delete` — xoá 1 từ (xoá cả đường dẫn nếu không có dấu cách)
-  - `Ctrl+U` — xoá cả dòng
-  - `Ctrl+Z` — **hoàn tác** ký tự vừa xoá (hoặc vừa gõ)
+- Ô nhập đường dẫn (soạn thảo như terminal chuẩn, có con trỏ di chuyển được):
+  - `←`/`→` hoặc `Ctrl+B`/`Ctrl+F` — di chuyển con trỏ
+  - `Ctrl+A` / `Ctrl+E` — về đầu / cuối dòng
+  - `Backspace` — xoá ký tự trước con trỏ; `Ctrl+D` — xoá ký tự tại con trỏ
+  - `Ctrl+W` hoặc `Option (Alt)+Delete` — xoá 1 từ trước con trỏ (xoá cả đường dẫn nếu không có dấu cách); `Alt+D` — xoá 1 từ sau con trỏ
+  - `Ctrl+U` — xoá cả dòng; `Ctrl+K` — xoá từ con trỏ đến cuối dòng
+  - `Ctrl+Z` — **hoàn tác** thao tác vừa rồi (khôi phục ký tự vừa xoá/gõ)
 
 > Lưu ý: trên macOS, `Cmd+Z`/`Cmd+Delete` thường không được terminal gửi tới ứng
 > dụng — hãy dùng `Ctrl+Z` để hoàn tác và `Ctrl+U` để xoá cả dòng.

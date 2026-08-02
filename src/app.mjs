@@ -26,35 +26,47 @@ function Spinner() {
   return html`<${Text} color="cyan">${SPINNER_FRAMES[i]}<//>`;
 }
 
-/** Delete the previous "word": trailing whitespace, then trailing non-whitespace. */
-export function deleteWord(s) {
-  let i = s.length;
+/** Index where the word before `pos` starts (skip whitespace, then the word). */
+export function wordStart(s, pos) {
+  let i = pos;
   while (i > 0 && /\s/.test(s[i - 1])) i--;
   while (i > 0 && !/\s/.test(s[i - 1])) i--;
-  return s.slice(0, i);
+  return i;
+}
+
+/** Index just after the word following `pos` (skip whitespace, then the word). */
+export function wordEnd(s, pos) {
+  let i = pos;
+  while (i < s.length && /\s/.test(s[i])) i++;
+  while (i < s.length && !/\s/.test(s[i])) i++;
+  return i;
 }
 
 /**
- * Controlled single-line text input.
- * Handles typing, paste/drag, quick-delete, and undo:
- *   - Backspace/Delete → remove one char
- *   - Ctrl+W or Option(Alt)+Delete → delete previous word (whole path if no spaces)
- *   - Ctrl+U (or Cmd+Delete when the terminal maps it to ^U) → clear the line
+ * Controlled single-line text input with a movable cursor — behaves like a
+ * standard terminal (readline/emacs) line editor:
+ *   - ←/→ move cursor · Ctrl+B/Ctrl+F move cursor
+ *   - Ctrl+A start of line · Ctrl+E end of line
+ *   - Backspace delete char before cursor · Ctrl+D / forward-Delete delete char at cursor
+ *   - Ctrl+W or Option(Alt)+Delete → delete the word before the cursor
+ *   - Alt+D → delete the word after the cursor
+ *   - Ctrl+U → delete the whole line · Ctrl+K → delete from cursor to end
  *   - Ctrl+Z → undo the last edit (restore just-deleted / typed characters)
  *
- * Undo history is kept per mount; give the component a stable `key` per input
- * so history resets when moving to the next field.
+ * The parent owns the text (value/onChange); the cursor is local. Give the
+ * component a stable `key` per input so cursor + undo history reset per field.
  */
 export function TextField({ value, onChange, onSubmit }) {
+  const [rawCursor, setCursor] = useState(value.length);
   const historyRef = useRef([]);
+  const cursor = Math.min(Math.max(rawCursor, 0), value.length);
 
-  // Apply an edit, remembering the previous value so it can be undone.
-  const change = (next) => {
-    if (next !== value) {
-      historyRef.current.push(value);
-      if (historyRef.current.length > 500) historyRef.current.shift();
-    }
-    onChange(next);
+  // Apply an edit (new text + new cursor), remembering the old state for undo.
+  const edit = (nextValue, nextCursor) => {
+    historyRef.current.push({ value, cursor });
+    if (historyRef.current.length > 500) historyRef.current.shift();
+    setCursor(nextCursor);
+    onChange(nextValue);
   };
 
   useInput((input, key) => {
@@ -63,46 +75,92 @@ export function TextField({ value, onChange, onSubmit }) {
       return;
     }
 
-    // Undo the last edit (e.g. bring back characters cleared with Ctrl+U/W): Ctrl+Z.
+    // Undo the last edit (bring back characters cleared/typed): Ctrl+Z.
     if ((key.ctrl && input === 'z') || input === '\x1a') {
-      if (historyRef.current.length > 0) onChange(historyRef.current.pop());
+      const prev = historyRef.current.pop();
+      if (prev) {
+        setCursor(prev.cursor);
+        onChange(prev.value);
+      }
       return;
     }
 
-    // Clear the entire line: Ctrl+U (0x15). Some terminals map Cmd+Delete here.
+    // ── cursor movement ─────────────────────────────────────────────
+    if (key.leftArrow || (key.ctrl && input === 'b')) {
+      setCursor(Math.max(0, cursor - 1));
+      return;
+    }
+    if (key.rightArrow || (key.ctrl && input === 'f')) {
+      setCursor(Math.min(value.length, cursor + 1));
+      return;
+    }
+    if (key.ctrl && input === 'a') {
+      setCursor(0);
+      return;
+    }
+    if (key.ctrl && input === 'e') {
+      setCursor(value.length);
+      return;
+    }
+
+    // ── delete whole line: Ctrl+U ───────────────────────────────────
     if ((key.ctrl && input === 'u') || input === '\x15') {
-      change('');
+      edit('', 0);
       return;
     }
 
-    // Delete previous word: Ctrl+W (0x17) or Option/Alt+Backspace (meta+backspace).
+    // ── delete to end of line: Ctrl+K ───────────────────────────────
+    if (key.ctrl && input === 'k') {
+      edit(value.slice(0, cursor), cursor);
+      return;
+    }
+
+    // ── delete word before cursor: Ctrl+W / Option+Backspace ────────
     if (
       (key.ctrl && input === 'w') ||
       input === '\x17' ||
       (key.meta && (key.backspace || key.delete))
     ) {
-      change(deleteWord(value));
+      const start = wordStart(value, cursor);
+      edit(value.slice(0, start) + value.slice(cursor), start);
       return;
     }
 
-    if (key.backspace || key.delete) {
-      change(value.slice(0, -1));
+    // ── delete word after cursor: Alt+D ─────────────────────────────
+    if (key.meta && input === 'd') {
+      const end = wordEnd(value, cursor);
+      edit(value.slice(0, cursor) + value.slice(end), cursor);
       return;
     }
 
-    // Ignore remaining control/meta/navigation chords (Ctrl+C handled by Ink).
-    if (key.ctrl || key.meta || key.escape || key.upArrow || key.downArrow || key.leftArrow || key.rightArrow) {
+    // ── delete char before cursor: Backspace ────────────────────────
+    if (key.backspace || input === '\x7f' || input === '\x08') {
+      if (cursor > 0) edit(value.slice(0, cursor - 1) + value.slice(cursor), cursor - 1);
       return;
     }
-    if (input) change(value + input);
+
+    // ── delete char at cursor: forward-Delete / Ctrl+D ──────────────
+    if (key.delete || (key.ctrl && input === 'd')) {
+      if (cursor < value.length) edit(value.slice(0, cursor) + value.slice(cursor + 1), cursor);
+      return;
+    }
+
+    // Ignore any other control/meta/navigation chords (Ctrl+C handled by Ink).
+    if (key.ctrl || key.meta || key.escape || key.upArrow || key.downArrow || key.tab) {
+      return;
+    }
+
+    // ── insert typed / pasted / dragged text at the cursor ──────────
+    if (input) {
+      edit(value.slice(0, cursor) + input + value.slice(cursor), cursor + input.length);
+    }
   });
 
-  return html`
-    <${Text}>
-      ${value}
-      <${Text} inverse> <//>
-    <//>
-  `;
+  // Render with a block cursor at its position.
+  const before = value.slice(0, cursor);
+  const at = value.slice(cursor, cursor + 1) || ' ';
+  const after = value.slice(cursor + 1);
+  return html`<${Text}>${before}<${Text} inverse>${at}<//>${after}<//>`;
 }
 
 /** Vertical selectable list. items: [{label, value, description?}] */
@@ -219,7 +277,7 @@ function InputScreen({ tool, input, index, total, draft, error, onChange, onSubm
         <${Text} color="gray">
           ${input.type === 'select'
             ? '↑/↓ chọn · Enter xác nhận'
-            : 'Enter xác nhận · Ctrl+W/Option+Delete xoá 1 từ · Ctrl+U xoá cả dòng · Ctrl+Z hoàn tác · Ctrl+C thoát'}
+            : '←/→ · Ctrl+A/E đầu/cuối · Ctrl+W/Option+Delete xoá từ · Ctrl+U xoá dòng · Ctrl+Z hoàn tác · Enter xác nhận'}
         <//>
       <//>
     <//>

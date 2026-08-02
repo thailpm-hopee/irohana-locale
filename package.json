@@ -1,6 +1,6 @@
 {
   "name": "irohana-locale",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Công cụ TUI tương tác cho các script địa phương hoá (localization) của dự án irohana-study. Chọn công cụ từ menu, kéo-thả file/thư mục, xem log trực tiếp.",
   "keywords": [
     "irohana",

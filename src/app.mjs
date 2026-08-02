@@ -26,19 +26,53 @@ function Spinner() {
   return html`<${Text} color="cyan">${SPINNER_FRAMES[i]}<//>`;
 }
 
-/** Controlled single-line text input (handles typing, paste/drag, backspace). */
-function TextField({ value, onChange, onSubmit }) {
+/** Delete the previous "word": trailing whitespace, then trailing non-whitespace. */
+export function deleteWord(s) {
+  let i = s.length;
+  while (i > 0 && /\s/.test(s[i - 1])) i--;
+  while (i > 0 && !/\s/.test(s[i - 1])) i--;
+  return s.slice(0, i);
+}
+
+/**
+ * Controlled single-line text input.
+ * Handles typing, paste/drag, and quick-delete:
+ *   - Backspace/Delete → remove one char
+ *   - Ctrl+W or Option(Alt)+Delete → delete previous word (whole path if no spaces)
+ *   - Ctrl+U (or Cmd+Delete when the terminal maps it to ^U) → clear the line
+ */
+export function TextField({ value, onChange, onSubmit }) {
   useInput((input, key) => {
     if (key.return) {
       onSubmit();
       return;
     }
+
+    // Clear the entire line: Ctrl+U (0x15). Some terminals map Cmd+Delete here.
+    if ((key.ctrl && input === 'u') || input === '\x15') {
+      onChange('');
+      return;
+    }
+
+    // Delete previous word: Ctrl+W (0x17) or Option/Alt+Backspace (meta+backspace).
+    if (
+      (key.ctrl && input === 'w') ||
+      input === '\x17' ||
+      (key.meta && (key.backspace || key.delete))
+    ) {
+      onChange(deleteWord(value));
+      return;
+    }
+
     if (key.backspace || key.delete) {
       onChange(value.slice(0, -1));
       return;
     }
-    // Ignore control/meta chords (Ctrl+C handled by Ink itself).
-    if (key.ctrl || key.meta || key.escape || key.upArrow || key.downArrow) return;
+
+    // Ignore remaining control/meta/navigation chords (Ctrl+C handled by Ink).
+    if (key.ctrl || key.meta || key.escape || key.upArrow || key.downArrow || key.leftArrow || key.rightArrow) {
+      return;
+    }
     if (input) onChange(value + input);
   });
 
@@ -162,7 +196,9 @@ function InputScreen({ tool, input, index, total, draft, error, onChange, onSubm
 
       <${Box} marginTop=${1}>
         <${Text} color="gray">
-          ${input.type === 'select' ? '↑/↓ chọn · Enter xác nhận' : 'Enter xác nhận · Ctrl+C thoát'}
+          ${input.type === 'select'
+            ? '↑/↓ chọn · Enter xác nhận'
+            : 'Enter xác nhận · Ctrl+W/Option+Delete xoá 1 từ · Ctrl+U xoá cả dòng · Ctrl+C thoát'}
         <//>
       <//>
     <//>

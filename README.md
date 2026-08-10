@@ -136,6 +136,15 @@ quả vào `<thư-mục-dự-án>/irl-output/<tên-công-cụ>/`.
   Vì lấy JSON làm chuẩn nên chạy nhiều lần liên tiếp (chưa commit) vẫn đúng —
   không cần vòng xuất "merged Excel" như `paired`.
 
+  **Chọn ngôn ngữ (chỉ ở `multi`):** sau khi chọn `multi`, TUI hiện thêm một
+  bước cho phép **chọn ngôn ngữ nào sẽ ghi vào `common.json`** dựa trên các ngôn
+  ngữ tìm thấy trong file Excel. Mặc định **chọn tất cả**; dùng `Space` để bỏ
+  chọn ngôn ngữ không muốn cập nhật (lựa chọn được **ghi nhớ** cho lần sau).
+  Không bắt buộc phải đủ mọi ngôn ngữ — công cụ sẽ in danh sách ngôn ngữ **không
+  được cập nhật** so với JSON (theo mã 2 ký tự): ngôn ngữ bị bỏ chọn, và ngôn ngữ
+  có trong JSON nhưng thiếu cột trong Excel. Chạy trực tiếp thì dùng cờ
+  `--languages=vi,en,ja` (bỏ cờ = cập nhật mọi ngôn ngữ phát hiện được).
+
 **Kết quả:** mặc định công cụ **chỉ cập nhật các file `common.json`** (tại chỗ) —
 không tạo thư mục `irl-output`. Nếu bật *Ghi file kết quả* trong
 [Cài đặt](#cài-đặt-settings), các file phụ được ghi vào `irl-output/i18n-update/`:
@@ -147,7 +156,7 @@ Chạy trực tiếp không cần TUI:
 
 ```bash
 node tools/i18n-update/run.js "/đường-dẫn/file.xlsx" \
-  --project-root="/đường-dẫn/repo" [--layout=paired|single|multi]
+  --project-root="/đường-dẫn/repo" [--layout=paired|single|multi] [--languages=vi,en,ja]
 ```
 
 ### 2. Xuất gói localization (ZIP) — `export-localization`

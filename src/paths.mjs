@@ -50,6 +50,15 @@ export function validatePath(p, type) {
  * Returns { value } on success or { error } on failure.
  */
 export function resolveAndValidate(input, draft) {
+  // Multiselect: draft is an array of chosen values.
+  if (input.type === 'multiselect') {
+    const arr = Array.isArray(draft) ? draft : [];
+    if (input.required && arr.length === 0) {
+      return { error: 'Chọn ít nhất 1 ngôn ngữ (Space để bật/tắt)' };
+    }
+    return { value: arr };
+  }
+
   let v = draft;
 
   // Fall back to the default when left blank.

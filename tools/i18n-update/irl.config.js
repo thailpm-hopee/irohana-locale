@@ -1,5 +1,7 @@
 'use strict';
 
+const { detectExcelLanguages } = require('./languages');
+
 /**
  * TUI manifest for the "i18n update from Excel" pipeline.
  */
@@ -46,6 +48,21 @@ module.exports = {
         { value: 'multi', label: 'Multi — nhiều cột/ngôn ngữ (lấy cột phải nhất, so với JSON)' },
       ],
       pass: { kind: 'flag', key: '--layout' },
+    },
+    {
+      name: 'languages',
+      type: 'multiselect',
+      label: 'Ngôn ngữ cập nhật vào common.json',
+      hint: 'Space để bật/tắt · mặc định chọn tất cả · bỏ chọn để không cập nhật ngôn ngữ đó.',
+      required: true,
+      cache: true,
+      default: 'all', // all detected languages checked by default
+      // Only for the multi layout, and only when the Excel actually has
+      // detectable language columns (otherwise skip and update everything).
+      when: (v) => v.layout === 'multi' && detectExcelLanguages(v.excel).length > 0,
+      // Dynamic choices: the languages found in the chosen Excel file.
+      choices: (v) => detectExcelLanguages(v.excel).map((code) => ({ value: code, label: code })),
+      pass: { kind: 'flag', key: '--languages' },
     },
   ],
 };

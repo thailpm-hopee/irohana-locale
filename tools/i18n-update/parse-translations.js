@@ -21,16 +21,19 @@
  *             against the locale JSON (the source of truth).
  *   - multi:  each language has one or more columns (detected from the header),
  *             possibly a different count per language. The rightmost reviewed
- *             cell wins and is compared against the locale JSON.
+ *             cell wins and is compared against the locale JSON. An optional
+ *             --languages allow-list restricts which languages are written.
  *
  * Usage:
- *   node parse-translations.js <path-to-excel> --project-root=<path> [--layout=paired|single|multi]
+ *   node parse-translations.js <path-to-excel> --project-root=<path> \
+ *     [--layout=paired|single|multi] [--languages=vi,en,ja]
  */
 
 const XLSX = require('xlsx');
 const path = require('path');
 const fs = require('fs');
 const { getStrikethroughRefs, columnLetter } = require('./read-strikethrough');
+const { LANG_COLUMNS, LANG_CODES, detectLanguageColumns } = require('./languages');
 const { resolveLocalesDir, resolveOutputDir } = require('../_shared/project');
 
 // ---------------------------------------------------------------------------
@@ -40,25 +43,6 @@ const { resolveLocalesDir, resolveOutputDir } = require('../_shared/project');
 const OUTPUT_DIR = resolveOutputDir('i18n-update');
 const LOCALES_DIR = resolveLocalesDir();
 
-// Column mapping: language code → [currentColIndex, updatedColIndex]
-// Based on header row structure (0-indexed):
-//   A(0)=Key, B(1)=Image, C(2)=ja current, D(3)=ja updated, ...
-const LANG_COLUMNS = {
-  ja: { current: 2, updated: 3 },
-  vi: { current: 4, updated: 5 },
-  my: { current: 6, updated: 7 },
-  id: { current: 8, updated: 9 },
-  en: { current: 10, updated: 11 },
-  ne: { current: 12, updated: 13 },
-  km: { current: 14, updated: 15 },
-  mn: { current: 16, updated: 17 },
-  th: { current: 18, updated: 19 },
-  tl: { current: 20, updated: 21 },
-};
-
-// Known language codes (single source of truth derived from LANG_COLUMNS).
-const LANG_CODES = Object.keys(LANG_COLUMNS);
-
 /**
  * Parse CLI args: an optional Excel path (first non-flag arg) and an optional
  * `--layout=single|paired` flag (defaults to `paired`, the legacy two-column
@@ -67,14 +51,22 @@ const LANG_CODES = Object.keys(LANG_COLUMNS);
 function parseArgs(argv) {
   let excelPath = null;
   let layout = 'paired';
+  let languages = null; // null = no filter (update every detected language)
   for (const arg of argv.slice(2)) {
     if (arg.startsWith('--layout=')) {
       layout = arg.slice('--layout='.length);
+    } else if (arg.startsWith('--languages=')) {
+      const raw = arg.slice('--languages='.length).trim();
+      const list = raw
+        .split(',')
+        .map((s) => s.trim().toLowerCase())
+        .filter(Boolean);
+      languages = list.length > 0 ? list : null;
     } else if (!arg.startsWith('--')) {
       excelPath = arg;
     }
   }
-  return { excelPath, layout };
+  return { excelPath, layout, languages };
 }
 
 /**
@@ -84,37 +76,10 @@ function parseArgs(argv) {
  * The "JSON Key" and reference (テキストの場所) columns are ignored.
  */
 function buildSingleColumnMap(headerRow) {
+  // First column per language (single layout has exactly one column each).
   const map = {};
-  for (let c = 0; c < headerRow.length; c++) {
-    const header = String(headerRow[c] || '').trim();
-    const match = header.match(/^([a-z]{2,3})\s*[(（]/i);
-    if (!match) continue;
-    const code = match[1].toLowerCase();
-    if (LANG_CODES.includes(code) && !(code in map)) {
-      map[code] = c;
-    }
-  }
-  return map;
-}
-
-/**
- * Build a { langCode → [columnIndex, …] } map for the multi-column layout.
- * Same header detection as buildSingleColumnMap, but keeps EVERY column that
- * belongs to a language (left→right order preserved) instead of only the first.
- * This lets a language carry any number of columns (e.g. a baseline plus one or
- * more revision rounds), and lets different languages have different counts.
- * The chosen value per row is resolved later as the rightmost reviewed cell.
- */
-function buildMultiColumnMap(headerRow) {
-  const map = {};
-  for (let c = 0; c < headerRow.length; c++) {
-    const header = String(headerRow[c] || '').trim();
-    const match = header.match(/^([a-z]{2,3})\s*[(（]/i);
-    if (!match) continue;
-    const code = match[1].toLowerCase();
-    if (!LANG_CODES.includes(code)) continue;
-    if (!map[code]) map[code] = [];
-    map[code].push(c);
+  for (const [code, cols] of Object.entries(detectLanguageColumns(headerRow))) {
+    map[code] = cols[0];
   }
   return map;
 }
@@ -332,7 +297,10 @@ function coerceCellValue(rawValue, existingValue) {
  *
  * Returns { diffFull, diffUpdates, transformedRecords, totalChanges, totalNewKeys }.
  */
-function detectChanges({ rows, localeData, layout, singleColMap, multiColMap, strikeRefs }) {
+function detectChanges({ rows, localeData, layout, singleColMap, multiColMap, strikeRefs, languages }) {
+  // Optional allow-list of language codes to update (multi layout only). When
+  // null, every detected language is updated.
+  const langFilter = languages ? new Set(languages) : null;
   const diffFull = {};   // (a) with old + new
   const diffUpdates = {}; // (b) with only new
   // transformedRecords: { [lang]: [{ key, excelRow, column, rawValue, finalValue, issues }] }
@@ -438,6 +406,9 @@ function detectChanges({ rows, localeData, layout, singleColMap, multiColMap, st
       }
 
       for (const [lang, cols] of Object.entries(multiColMap)) {
+        // Honor the user's language allow-list (unchecked languages skipped).
+        if (langFilter && !langFilter.has(lang)) continue;
+
         // Walk right→left and take the first reviewed value (latest wins).
         let rawValue = null;
         for (let ci = cols.length - 1; ci >= 0; ci--) {
@@ -543,7 +514,7 @@ function detectChanges({ rows, localeData, layout, singleColMap, multiColMap, st
 // ---------------------------------------------------------------------------
 
 async function main() {
-  const { excelPath, layout } = parseArgs(process.argv);
+  const { excelPath, layout, languages } = parseArgs(process.argv);
 
   if (!['paired', 'single', 'multi'].includes(layout)) {
     console.error(`❌ Invalid --layout=${layout}. Use "paired", "single" or "multi".`);
@@ -586,7 +557,7 @@ async function main() {
       }
       console.log(`🌐 Detected columns: ${detected.map((l) => `${l}→col${singleColMap[l]}`).join(', ')}`);
     } else {
-      multiColMap = buildMultiColumnMap(rows[0] || []);
+      multiColMap = detectLanguageColumns(rows[0] || []);
       const detected = Object.keys(multiColMap);
       if (detected.length === 0) {
         console.error('❌ No language columns detected in header row.');
@@ -594,6 +565,27 @@ async function main() {
         process.exit(1);
       }
       console.log(`🌐 Detected columns: ${detected.map((l) => `${l}→[${multiColMap[l].join(',')}]`).join(', ')}`);
+
+      // Report which languages will actually be updated vs. skipped. Languages
+      // present in the project JSON (2-char dirs) but not updated this run —
+      // either absent from the Excel or unchecked by the user — are surfaced so
+      // a partial update is explicit, not silent.
+      const jsonLangs = LANG_CODES.filter((l) => localeData[l] != null);
+      const willUpdate = detected.filter((l) => !languages || languages.includes(l));
+      console.log(`🈶 Ngôn ngữ sẽ cập nhật: ${willUpdate.length ? willUpdate.join(', ') : '(không có)'}`);
+
+      const deselected = languages ? detected.filter((l) => !languages.includes(l)) : [];
+      if (deselected.length > 0) {
+        console.log(`⏭️  Bỏ chọn (có trong Excel nhưng không cập nhật): ${deselected.join(', ')}`);
+      }
+      const missingFromExcel = jsonLangs.filter((l) => !detected.includes(l));
+      if (missingFromExcel.length > 0) {
+        console.log(`⚠️  Thiếu trong Excel (có trong JSON nhưng không thấy cột): ${missingFromExcel.join(', ')}`);
+      }
+      const notUpdated = jsonLangs.filter((l) => !willUpdate.includes(l));
+      if (notUpdated.length > 0) {
+        console.log(`ℹ️  So với JSON, các ngôn ngữ KHÔNG được cập nhật lần này: ${notUpdated.join(', ')}`);
+      }
     }
 
     // Strikethrough = deleted key → ignore. Read from raw OOXML (SheetJS drops
@@ -608,7 +600,7 @@ async function main() {
   }
 
   const { diffFull, diffUpdates, transformedRecords, totalChanges, totalNewKeys, skippedDeletedRows } =
-    detectChanges({ rows, localeData, layout, singleColMap, multiColMap, strikeRefs });
+    detectChanges({ rows, localeData, layout, singleColMap, multiColMap, strikeRefs, languages });
 
   if (skippedDeletedRows && skippedDeletedRows.length > 0) {
     console.log(`\n🚫 Ignored ${skippedDeletedRows.length} deleted (struck-through) key(s):`);

@@ -4,7 +4,11 @@
  * i18n update pipeline runner
  *
  * Usage:
- *   node run.js <path-to-excel> --project-root=<path> [--layout=paired|single|multi]
+ *   node run.js <path-to-excel> --project-root=<path> \
+ *     [--layout=paired|single|multi] [--languages=vi,en,ja]
+ *
+ * --languages (multi layout only) restricts which languages are written to the
+ * locale JSON; omit it to update every language detected in the Excel.
  */
 
 const { execSync } = require('child_process');
@@ -62,14 +66,17 @@ const PIPELINE_STEPS = [
 function parseArgs(argv) {
   let excelPath = null;
   let layout = 'paired';
+  let languages = null; // raw --languages=… value, forwarded to the parser
   for (const arg of argv.slice(2)) {
     if (arg.startsWith('--layout=')) {
       layout = arg.slice('--layout='.length);
+    } else if (arg.startsWith('--languages=')) {
+      languages = arg.slice('--languages='.length);
     } else if (!arg.startsWith('--')) {
       excelPath = arg;
     }
   }
-  return { excelPath, layout };
+  return { excelPath, layout, languages };
 }
 
 function runStep(stepNumber, label, command) {
@@ -85,7 +92,7 @@ function runStep(stepNumber, label, command) {
 }
 
 function main() {
-  const { excelPath, layout } = parseArgs(process.argv);
+  const { excelPath, layout, languages } = parseArgs(process.argv);
 
   if (!['paired', 'single', 'multi'].includes(layout)) {
     console.error(`❌ Invalid --layout=${layout}. Use "paired", "single" or "multi".`);
@@ -99,6 +106,8 @@ function main() {
 
   const excelArg = `"${excelPath}"`;
   const layoutArg = `--layout=${layout}`;
+  // Language allow-list only applies to the multi layout; ignore it otherwise.
+  const languagesArg = layout === 'multi' && languages ? `--languages=${languages}` : null;
 
   console.log('🚀 i18n Update Workflow');
   console.log(`   Project root: ${PROJECT_ROOT}`);
@@ -110,8 +119,11 @@ function main() {
   steps.forEach((step, i) => {
     const parts = [`node ${step.script}`];
     if (step.needsExcel && excelArg) parts.push(excelArg);
-    // Only the parser understands --layout; other steps ignore it.
-    if (step.script === 'parse-translations.js') parts.push(layoutArg);
+    // Only the parser understands --layout / --languages; other steps ignore them.
+    if (step.script === 'parse-translations.js') {
+      parts.push(layoutArg);
+      if (languagesArg) parts.push(languagesArg);
+    }
     runStep(i + 1, step.label, parts.join(' '));
 
     // After parsing, sanitize escape sequences before updating locale files

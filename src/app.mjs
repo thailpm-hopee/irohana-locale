@@ -86,7 +86,7 @@ export function segmentEnd(s, pos) {
  * The parent owns the text (value/onChange); the cursor is local. Give the
  * component a stable `key` per input so cursor + undo history reset per field.
  */
-export function TextField({ value, onChange, onSubmit, defaultValue }) {
+export function TextField({ value, onChange, onSubmit, defaultValue, onBack }) {
   const [rawCursor, setCursor] = useState(value.length);
   const historyRef = useRef([]);
   const cursor = Math.min(Math.max(rawCursor, 0), value.length);
@@ -190,8 +190,14 @@ export function TextField({ value, onChange, onSubmit, defaultValue }) {
       return;
     }
 
+    // Go back to the previous step: Esc.
+    if (key.escape) {
+      onBack?.();
+      return;
+    }
+
     // Ignore any other control/meta/navigation chords (Ctrl+C handled by Ink).
-    if (key.ctrl || key.meta || key.escape || key.upArrow || key.downArrow || key.tab) {
+    if (key.ctrl || key.meta || key.upArrow || key.downArrow || key.tab) {
       return;
     }
 
@@ -209,7 +215,7 @@ export function TextField({ value, onChange, onSubmit, defaultValue }) {
 }
 
 /** Vertical selectable list. items: [{label, value, description?}] */
-function SelectList({ items, initialIndex = 0, onSelect }) {
+function SelectList({ items, initialIndex = 0, onSelect, onBack }) {
   const [idx, setIdx] = useState(
     Math.min(Math.max(initialIndex, 0), Math.max(items.length - 1, 0))
   );
@@ -221,6 +227,8 @@ function SelectList({ items, initialIndex = 0, onSelect }) {
       setIdx((i) => (i + 1) % items.length);
     } else if (key.return) {
       onSelect(items[idx], idx);
+    } else if (key.escape && onBack) {
+      onBack();
     }
   });
 
@@ -265,10 +273,12 @@ export function multiToggleAll(choices, selected) {
  * Toggling it deselects everything when already all-selected, otherwise selects
  * everything. Row 0 is the All row; rows 1..N are the individual languages.
  */
-function MultiSelectList({ choices, selected, onToggle, onSubmit }) {
+function MultiSelectList({ choices, selected, onToggle, onSubmit, onBack }) {
   const [idx, setIdx] = useState(0);
   const selectedSet = new Set(selected);
-  const rowCount = choices.length + 1; // +1 for the All row
+  const hasBack = !!onBack;
+  const backIdx = choices.length + 1; // after All(0) + langs(1..N)
+  const rowCount = choices.length + 1 + (hasBack ? 1 : 0);
 
   const selCount = choices.filter((c) => selectedSet.has(c.value)).length;
   const allState = multiAllState(choices, selected);
@@ -276,14 +286,19 @@ function MultiSelectList({ choices, selected, onToggle, onSubmit }) {
   useInput((input, key) => {
     if (choices.length === 0) {
       if (key.return) onSubmit();
+      else if (key.escape && onBack) onBack();
       return;
     }
     if (key.upArrow || input === 'k') {
       setIdx((i) => (i - 1 + rowCount) % rowCount);
     } else if (key.downArrow || input === 'j') {
       setIdx((i) => (i + 1) % rowCount);
+    } else if (key.escape && onBack) {
+      onBack();
     } else if (input === ' ') {
-      if (idx === 0) {
+      if (hasBack && idx === backIdx) {
+        onBack();
+      } else if (idx === 0) {
         // All row: collapse to none when everything is on, else select all.
         onToggle(multiToggleAll(choices, selected));
       } else {
@@ -295,7 +310,8 @@ function MultiSelectList({ choices, selected, onToggle, onSubmit }) {
         onToggle(choices.filter((c) => next.has(c.value)).map((c) => c.value));
       }
     } else if (key.return) {
-      onSubmit();
+      if (hasBack && idx === backIdx) onBack();
+      else onSubmit();
     }
   });
 
@@ -320,6 +336,11 @@ function MultiSelectList({ choices, selected, onToggle, onSubmit }) {
           <//>
         `;
       })}
+      ${hasBack
+        ? html`<${Text} color=${idx === backIdx ? 'cyan' : 'gray'} bold=${idx === backIdx}>
+            ${idx === backIdx ? '❯ ' : '  '}← Quay lại bước trước
+          <//>`
+        : null}
     <//>
   `;
 }
@@ -331,6 +352,21 @@ function resolveChoices(input, values) {
   return typeof input.choices === 'function'
     ? input.choices(values) || []
     : input.choices || [];
+}
+
+/** Human-readable display of a committed value, for the prior-steps summary. */
+function displayValue(input, val, values) {
+  if (input.type === 'select') {
+    const c = resolveChoices(input, values).find((x) => x.value === val);
+    return c ? c.label : String(val);
+  }
+  if (input.type === 'multiselect') {
+    const chs = resolveChoices(input, values);
+    const arr = Array.isArray(val) ? val : [];
+    if (arr.length === 0) return '(không có)';
+    return arr.map((v) => (chs.find((x) => x.value === v) || {}).label || v).join(', ');
+  }
+  return String(val);
 }
 
 /**
@@ -484,21 +520,36 @@ function SettingsScreen({ tools, settings, onChange, onDone }) {
   `;
 }
 
-function InputScreen({ tool, input, choices, index, total, draft, defaultDraft, error, onChange, onSubmit, onSelect, onToggle }) {
+function InputScreen({ tool, input, choices, index, total, draft, defaultDraft, answered, canGoBack, error, onChange, onSubmit, onSelect, onToggle, onBack }) {
   const cached = input.cache ? getCached(tool.id, input.name) : undefined;
   const showCached = cached != null && input.type !== 'select' && input.type !== 'multiselect';
 
+  const backHint = canGoBack ? ' · Esc quay lại' : '';
   const hint =
-    input.type === 'select'
+    (input.type === 'select'
       ? '↑/↓ chọn · Enter xác nhận'
       : input.type === 'multiselect'
         ? '↑/↓ di chuyển · Space bật/tắt · Enter xác nhận'
-        : '←/→ · Ctrl+A/E đầu/cuối · Ctrl+W xoá từ · Ctrl+U xoá dòng · Ctrl+Z hoàn tác · ↑ điền lại giá trị mặc định · Enter';
+        : '←/→ · Ctrl+A/E đầu/cuối · Ctrl+W xoá từ · Ctrl+U xoá dòng · Ctrl+Z hoàn tác · ↑ điền lại giá trị mặc định · Enter') +
+    backHint;
+
+  // A trailing "← Quay lại" item for list inputs (select), when a back step exists.
+  const selectItems = canGoBack ? [...choices, { value: '__back', label: '← Quay lại bước trước' }] : choices;
 
   return html`
     <${Box} flexDirection="column">
       <${Header} />
       <${Text} color="magenta" bold>▶ ${tool.title}<//>
+
+      ${answered && answered.length
+        ? html`<${Box} flexDirection="column" marginTop=${1}>
+            ${answered.map(
+              (a, i) =>
+                html`<${Text} key=${i} color="gray">  ✓ ${a.label}: <${Text} color="green">${a.text}<//><//>`
+            )}
+          <//>`
+        : null}
+
       <${Box} marginTop=${1}>
         <${Text}>Bước nhập ${index + 1}/${total}: <${Text} bold>${input.label}<//><//>
       <//>
@@ -510,12 +561,13 @@ function InputScreen({ tool, input, choices, index, total, draft, defaultDraft, 
       <${Box} marginTop=${1}>
         ${input.type === 'select'
           ? html`<${SelectList}
-              items=${choices}
+              items=${selectItems}
               initialIndex=${Math.max(
                 0,
-                choices.findIndex((c) => c.value === (cached ?? input.default))
+                selectItems.findIndex((c) => c.value === (cached ?? input.default))
               )}
-              onSelect=${(it) => onSelect(it.value)}
+              onSelect=${(it) => (it.value === '__back' ? onBack() : onSelect(it.value))}
+              onBack=${canGoBack ? onBack : undefined}
             />`
           : input.type === 'multiselect'
             ? html`<${MultiSelectList}
@@ -523,6 +575,7 @@ function InputScreen({ tool, input, choices, index, total, draft, defaultDraft, 
                 selected=${Array.isArray(draft) ? draft : []}
                 onToggle=${onToggle}
                 onSubmit=${onSubmit}
+                onBack=${canGoBack ? onBack : undefined}
               />`
             : html`<${Box}>
                 <${Text} color="green">❯ <//>
@@ -532,6 +585,7 @@ function InputScreen({ tool, input, choices, index, total, draft, defaultDraft, 
                   defaultValue=${defaultDraft}
                   onChange=${onChange}
                   onSubmit=${onSubmit}
+                  onBack=${canGoBack ? onBack : undefined}
                 />
               <//>`}
       <//>
@@ -638,7 +692,13 @@ export function App({ tools }) {
 
   function submitDraft() {
     const input = tool.inputs[index];
-    const { value, error: err } = resolveAndValidate(input, draft);
+    // Submitting an empty field reuses the default / last-saved value
+    // ("Enter để dùng lại"), instead of rejecting it as required.
+    let d = draft;
+    if (d == null || (typeof d === 'string' && d.trim() === '')) {
+      d = initialDraft(tool, input, values);
+    }
+    const { value, error: err } = resolveAndValidate(input, d);
     if (err) {
       setError(err);
       return;
@@ -648,6 +708,19 @@ export function App({ tools }) {
 
   function selectChoice(input, value) {
     commitValue(input, value);
+  }
+
+  /** Return to the previous visible step, restoring its committed value. */
+  function goBack() {
+    let i = index - 1;
+    while (i >= 0 && tool.inputs[i].when && !tool.inputs[i].when(values)) i--;
+    if (i < 0) return; // already at the first step
+    const prev = tool.inputs[i];
+    setIndex(i);
+    setError(null);
+    const prevVal = values[prev.name];
+    setDraft(prevVal != null ? prevVal : initialDraft(tool, prev, values));
+    setScreen('input');
   }
 
   function startRun(t, collected) {
@@ -723,6 +796,11 @@ export function App({ tools }) {
     // step counter stays truthful when a conditional step is skipped.
     const visible = tool.inputs.filter((inp) => !inp.when || inp.when(values));
     const pos = visible.indexOf(input);
+    // Summary of the answers given in earlier (visible) steps, for tracking.
+    const answered = visible
+      .slice(0, Math.max(pos, 0))
+      .filter((inp) => inp.name in values)
+      .map((inp) => ({ label: inp.label, text: displayValue(inp, values[inp.name], values) }));
     return html`<${InputScreen}
       tool=${tool}
       input=${input}
@@ -731,11 +809,14 @@ export function App({ tools }) {
       total=${visible.length}
       draft=${draft}
       defaultDraft=${defaultDraft}
+      answered=${answered}
+      canGoBack=${pos > 0}
       error=${error}
       onChange=${setDraft}
       onSubmit=${submitDraft}
       onSelect=${(value) => selectChoice(input, value)}
       onToggle=${setDraft}
+      onBack=${goBack}
     />`;
   }
   if (screen === 'running') {

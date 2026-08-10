@@ -63,6 +63,11 @@ export function buildInvocation(tool, values) {
   const args = [];
 
   for (const input of tool.inputs) {
+    // Skip inputs hidden by their `when` predicate (e.g. a step the user
+    // navigated past and then made irrelevant by going back and changing an
+    // earlier answer) — otherwise a stale value would leak into the args.
+    if (input.when && !input.when(values)) continue;
+
     let value = values[input.name];
     if (Array.isArray(value)) {
       if (value.length === 0) continue;

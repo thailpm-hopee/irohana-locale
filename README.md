@@ -70,14 +70,19 @@ Luồng thao tác:
      dẫn đầy đủ sẽ tự điền, kể cả khi có dấu cách), rồi nhấn `Enter`. Đường dẫn
      dán vào được tự chuẩn hoá (bỏ dấu nháy, bỏ ký tự escape `\ `, mở rộng `~`).
    - **Lựa chọn:** dùng `↑`/`↓` rồi `Enter`.
-   - **Văn bản:** gõ trực tiếp; để trống để dùng giá trị mặc định.
+   - **Văn bản:** gõ trực tiếp; **để trống rồi `Enter` sẽ dùng giá trị mặc định /
+     đã lưu** (không báo lỗi bắt buộc).
    - Nếu đã chạy trước đó, giá trị cũ hiện sẵn — chỉ cần `Enter` để dùng lại.
+   - **Các bước đã nhập** được liệt kê (`✓ Nhãn: giá trị`) ở đầu mỗi màn hình để
+     bạn theo dõi.
+   - **Quay lại bước trước:** nhấn `Esc`, hoặc chọn mục cuối **`← Quay lại bước
+     trước`** trong các bước dạng danh sách/nhiều lựa chọn.
 3. **Xem log trực tiếp** khi công cụ đang chạy (có spinner ⠋).
 4. **Kết thúc:** hiện dấu `✔` (thành công) hoặc `✖` (lỗi) kèm đường dẫn kết quả.
    Nhấn `Enter` để về menu, `Ctrl+C` để thoát.
 
 **Phím tắt:**
-- Danh sách: `↑`/`↓` di chuyển · `Enter` xác nhận · `Ctrl+C` thoát.
+- Danh sách: `↑`/`↓` di chuyển · `Enter` xác nhận · `Esc` quay lại bước trước · `Ctrl+C` thoát.
 - Ô nhập đường dẫn (soạn thảo như terminal chuẩn, có con trỏ di chuyển được):
   - `←`/`→` hoặc `Ctrl+B`/`Ctrl+F` — di chuyển con trỏ
   - `Ctrl+A` / `Ctrl+E` — về đầu / cuối dòng
@@ -88,6 +93,7 @@ Luồng thao tác:
   - `Ctrl+Z` — **hoàn tác** thao tác vừa rồi (khôi phục ký tự vừa xoá/gõ)
   - `↑` (mũi tên lên) — **điền lại** giá trị mặc định/đã lưu vào ô để chỉnh sửa
     (ví dụ khi đã xoá ô nhưng muốn lấy lại đường dẫn của lần trước rồi sửa)
+  - `Esc` — **quay lại bước trước** (giá trị đã nhập được khôi phục để sửa)
 
 > Lưu ý: trên macOS, `Cmd+Z`/`Cmd+Delete` thường không được terminal gửi tới ứng
 > dụng — hãy dùng `Ctrl+Z` để hoàn tác và `Ctrl+U` để xoá cả dòng.

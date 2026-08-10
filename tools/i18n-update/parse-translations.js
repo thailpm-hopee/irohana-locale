@@ -12,12 +12,17 @@
  *   (c) i18n-transformed-check.md    — markdown report of values transformed during parsing
  *   (d) i18n-transformed-check.xlsx  — same report as Excel (one sheet per language)
  *
- * Detection logic:
- *   1. Updated column not empty AND differs from Current → flagged as update
- *   2. Key exists in Excel but missing from locale JSON  → flagged as new key (isNewKey: true)
+ * Detection logic depends on --layout:
+ *   - paired: Updated column not empty AND differs from Current → update;
+ *             key missing from locale JSON → new key (isNewKey: true).
+ *   - single: the single per-language column IS the desired value; compared
+ *             against the locale JSON (the source of truth).
+ *   - multi:  each language has one or more columns (detected from the header),
+ *             possibly a different count per language. The rightmost reviewed
+ *             cell wins and is compared against the locale JSON.
  *
  * Usage:
- *   node parse-translations.js <path-to-excel> --project-root=<path> [--layout=paired|single]
+ *   node parse-translations.js <path-to-excel> --project-root=<path> [--layout=paired|single|multi]
  */
 
 const XLSX = require('xlsx');
@@ -86,6 +91,28 @@ function buildSingleColumnMap(headerRow) {
     if (LANG_CODES.includes(code) && !(code in map)) {
       map[code] = c;
     }
+  }
+  return map;
+}
+
+/**
+ * Build a { langCode → [columnIndex, …] } map for the multi-column layout.
+ * Same header detection as buildSingleColumnMap, but keeps EVERY column that
+ * belongs to a language (left→right order preserved) instead of only the first.
+ * This lets a language carry any number of columns (e.g. a baseline plus one or
+ * more revision rounds), and lets different languages have different counts.
+ * The chosen value per row is resolved later as the rightmost reviewed cell.
+ */
+function buildMultiColumnMap(headerRow) {
+  const map = {};
+  for (let c = 0; c < headerRow.length; c++) {
+    const header = String(headerRow[c] || '').trim();
+    const match = header.match(/^([a-z]{2,3})\s*[(（]/i);
+    if (!match) continue;
+    const code = match[1].toLowerCase();
+    if (!LANG_CODES.includes(code)) continue;
+    if (!map[code]) map[code] = [];
+    map[code].push(c);
   }
   return map;
 }
@@ -303,7 +330,7 @@ function coerceCellValue(rawValue, existingValue) {
  *
  * Returns { diffFull, diffUpdates, transformedRecords, totalChanges, totalNewKeys }.
  */
-function detectChanges({ rows, localeData, layout, singleColMap, strikeRefs }) {
+function detectChanges({ rows, localeData, layout, singleColMap, multiColMap, strikeRefs }) {
   const diffFull = {};   // (a) with old + new
   const diffUpdates = {}; // (b) with only new
   // transformedRecords: { [lang]: [{ key, excelRow, column, rawValue, finalValue, issues }] }
@@ -322,6 +349,42 @@ function detectChanges({ rows, localeData, layout, singleColMap, strikeRefs }) {
       if (!transformedRecords[lang]) transformedRecords[lang] = [];
       transformedRecords[lang].push({ key, excelRow, column, rawValue, finalValue, issues });
     }
+  }
+
+  // Resolve a single raw cell value for a language/key against the locale JSON,
+  // recording an update (or new key) when it differs. Shared by the 'single' and
+  // 'multi' layouts, where the JSON — not a sibling column — is the source of
+  // truth. Caller is responsible for picking which cell `rawValue` comes from.
+  function recordResolvedValue(lang, key, excelRow, rawValue) {
+    if (localeData[lang] == null) return; // locale file doesn't exist
+
+    const existingValue = getNestedValue(localeData[lang], key);
+
+    // Preserve structured values (arrays/objects) instead of stringifying.
+    const { value, isStructured } = coerceCellValue(rawValue, existingValue);
+    if (valuesEqual(existingValue, value)) return; // already up to date
+
+    const isNewKey = existingValue === undefined;
+    if (!diffFull[lang]) diffFull[lang] = {};
+    if (!diffUpdates[lang]) diffUpdates[lang] = {};
+
+    // Text-level transform checks only apply to plain string values.
+    if (!isStructured) recordIssues(lang, key, excelRow, rawValue, value, 'value');
+
+    diffFull[lang][key] = {
+      oldValue: isNewKey ? '' : existingValue,
+      newValue: value,
+      excelRow,
+      ...(isNewKey ? { isNewKey: true } : {}),
+    };
+    diffUpdates[lang][key] = {
+      value,
+      excelRow,
+      ...(isNewKey ? { isNewKey: true } : {}),
+    };
+
+    totalChanges++;
+    if (isNewKey) totalNewKeys++;
   }
 
   for (let i = 1; i < rows.length; i++) {
@@ -351,35 +414,43 @@ function detectChanges({ rows, localeData, layout, singleColMap, strikeRefs }) {
 
         // Skip empty cells and unreviewed placeholders.
         if (!trimmedRaw || trimmedRaw === '未チェック') continue;
-        if (localeData[lang] == null) continue; // locale file doesn't exist
 
-        const existingValue = getNestedValue(localeData[lang], key);
+        recordResolvedValue(lang, key, excelRow, rawValue);
+      }
+      continue;
+    }
 
-        // Preserve structured values (arrays/objects) instead of stringifying.
-        const { value, isStructured } = coerceCellValue(rawValue, existingValue);
-        if (valuesEqual(existingValue, value)) continue; // already up to date
+    // -----------------------------------------------------------------------
+    // Multi-column layout: each language has one or more columns (baseline +
+    // revision rounds), and languages may differ in how many. The applied value
+    // is the RIGHTMOST reviewed cell (non-empty, not '未チェック', not struck);
+    // it is compared against the locale JSON (the source of truth), so a stale
+    // baseline column can never suppress an update the way 'paired' does.
+    // -----------------------------------------------------------------------
+    if (layout === 'multi') {
+      // A struck-through JSON Key cell (column A) marks a deleted key → skip
+      // the whole row.
+      if (struck.has(`A${excelRow}`)) {
+        skippedDeletedRows.push({ key, excelRow });
+        continue;
+      }
 
-        const isNewKey = existingValue === undefined;
-        if (!diffFull[lang]) diffFull[lang] = {};
-        if (!diffUpdates[lang]) diffUpdates[lang] = {};
+      for (const [lang, cols] of Object.entries(multiColMap)) {
+        // Walk right→left and take the first reviewed value (latest wins).
+        let rawValue = null;
+        for (let ci = cols.length - 1; ci >= 0; ci--) {
+          const colIdx = cols[ci];
+          // Skip struck-through cells (partial deletions / retracted revisions).
+          if (struck.has(`${columnLetter(colIdx)}${excelRow}`)) continue;
+          const candidate = String(row[colIdx] ?? '');
+          const trimmedRaw = candidate.trim();
+          if (!trimmedRaw || trimmedRaw === '未チェック') continue;
+          rawValue = candidate;
+          break;
+        }
+        if (rawValue === null) continue; // no reviewed value in any column
 
-        // Text-level transform checks only apply to plain string values.
-        if (!isStructured) recordIssues(lang, key, excelRow, rawValue, value, 'value');
-
-        diffFull[lang][key] = {
-          oldValue: isNewKey ? '' : existingValue,
-          newValue: value,
-          excelRow,
-          ...(isNewKey ? { isNewKey: true } : {}),
-        };
-        diffUpdates[lang][key] = {
-          value,
-          excelRow,
-          ...(isNewKey ? { isNewKey: true } : {}),
-        };
-
-        totalChanges++;
-        if (isNewKey) totalNewKeys++;
+        recordResolvedValue(lang, key, excelRow, rawValue);
       }
       continue;
     }
@@ -464,8 +535,8 @@ function detectChanges({ rows, localeData, layout, singleColMap, strikeRefs }) {
 async function main() {
   const { excelPath, layout } = parseArgs(process.argv);
 
-  if (!['paired', 'single'].includes(layout)) {
-    console.error(`❌ Invalid --layout=${layout}. Use "paired" or "single".`);
+  if (!['paired', 'single', 'multi'].includes(layout)) {
+    console.error(`❌ Invalid --layout=${layout}. Use "paired", "single" or "multi".`);
     process.exit(1);
   }
 
@@ -492,16 +563,28 @@ async function main() {
   const localeData = loadLocaleData();
 
   let singleColMap = null;
+  let multiColMap = null;
   let strikeRefs = null;
-  if (layout === 'single') {
-    singleColMap = buildSingleColumnMap(rows[0] || []);
-    const detected = Object.keys(singleColMap);
-    if (detected.length === 0) {
-      console.error('❌ No language columns detected in header row.');
-      console.error('   Expected headers like "ja (2026-07-26)", "vi (2026-07-26)", …');
-      process.exit(1);
+  if (layout === 'single' || layout === 'multi') {
+    if (layout === 'single') {
+      singleColMap = buildSingleColumnMap(rows[0] || []);
+      const detected = Object.keys(singleColMap);
+      if (detected.length === 0) {
+        console.error('❌ No language columns detected in header row.');
+        console.error('   Expected headers like "ja (2026-07-26)", "vi (2026-07-26)", …');
+        process.exit(1);
+      }
+      console.log(`🌐 Detected columns: ${detected.map((l) => `${l}→col${singleColMap[l]}`).join(', ')}`);
+    } else {
+      multiColMap = buildMultiColumnMap(rows[0] || []);
+      const detected = Object.keys(multiColMap);
+      if (detected.length === 0) {
+        console.error('❌ No language columns detected in header row.');
+        console.error('   Expected headers like "ja (2026-07-26)", "vi (2026-07-26)", …');
+        process.exit(1);
+      }
+      console.log(`🌐 Detected columns: ${detected.map((l) => `${l}→[${multiColMap[l].join(',')}]`).join(', ')}`);
     }
-    console.log(`🌐 Detected columns: ${detected.map((l) => `${l}→col${singleColMap[l]}`).join(', ')}`);
 
     // Strikethrough = deleted key → ignore. Read from raw OOXML (SheetJS drops
     // font info). Best-effort: on failure, warn and continue without it.
@@ -515,7 +598,7 @@ async function main() {
   }
 
   const { diffFull, diffUpdates, transformedRecords, totalChanges, totalNewKeys, skippedDeletedRows } =
-    detectChanges({ rows, localeData, layout, singleColMap, strikeRefs });
+    detectChanges({ rows, localeData, layout, singleColMap, multiColMap, strikeRefs });
 
   if (skippedDeletedRows && skippedDeletedRows.length > 0) {
     console.log(`\n🚫 Ignored ${skippedDeletedRows.length} deleted (struck-through) key(s):`);

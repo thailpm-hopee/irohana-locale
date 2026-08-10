@@ -120,7 +120,21 @@ quả vào `<thư-mục-dự-án>/irl-output/<tên-công-cụ>/`.
 |--------|------|---------|
 | Thư mục dự án | thư mục | Kéo-thả repo (chứa `src/i18n/locales`) |
 | File Excel | file `.xlsx` | Kéo-thả file dịch thuật |
-| Bố cục Excel | lựa chọn | `paired` (2 cột/ngôn ngữ, mặc định) hoặc `single` (1 cột/ngôn ngữ) |
+| Bố cục Excel | lựa chọn | `paired` (2 cột/ngôn ngữ, mặc định), `single` (1 cột/ngôn ngữ), hoặc `multi` (nhiều cột/ngôn ngữ) |
+
+**Bố cục (layout):**
+
+- **`paired`** — mỗi ngôn ngữ có 2 cột cố định *current* + *updated*. Chỉ áp
+  dụng thay đổi khi *updated* khác *current* (so sánh giữa 2 cột Excel). Yêu cầu
+  vị trí cột cố định và **giống nhau** cho mọi ngôn ngữ.
+- **`single`** — mỗi ngôn ngữ có đúng 1 cột; giá trị trong cột được so trực tiếp
+  với file JSON locale. Cột được nhận diện qua header dạng `"<lang> (ngày)"`.
+- **`multi`** — mỗi ngôn ngữ có thể có **nhiều cột** (ví dụ 1 cột gốc + nhiều đợt
+  chỉnh sửa) và **số cột giữa các ngôn ngữ có thể khác nhau**. Cột được nhận diện
+  qua header (`"<lang> (…)"`); giá trị áp dụng là **ô được duyệt ở cột phải nhất**
+  (bỏ qua ô trống, `未チェック`, ô gạch ngang), so **trực tiếp với JSON locale**.
+  Vì lấy JSON làm chuẩn nên chạy nhiều lần liên tiếp (chưa commit) vẫn đúng —
+  không cần vòng xuất "merged Excel" như `paired`.
 
 **Kết quả:** mặc định công cụ **chỉ cập nhật các file `common.json`** (tại chỗ) —
 không tạo thư mục `irl-output`. Nếu bật *Ghi file kết quả* trong
@@ -133,7 +147,7 @@ Chạy trực tiếp không cần TUI:
 
 ```bash
 node tools/i18n-update/run.js "/đường-dẫn/file.xlsx" \
-  --project-root="/đường-dẫn/repo" [--layout=paired|single]
+  --project-root="/đường-dẫn/repo" [--layout=paired|single|multi]
 ```
 
 ### 2. Xuất gói localization (ZIP) — `export-localization`

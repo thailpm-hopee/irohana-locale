@@ -43,6 +43,7 @@ module.exports = {
       choices: [
         { value: 'paired', label: 'Paired — 2 cột/ngôn ngữ (current + updated) [mặc định]' },
         { value: 'single', label: 'Single — 1 cột/ngôn ngữ (header "<lang> (ngày)")' },
+        { value: 'multi', label: 'Multi — nhiều cột/ngôn ngữ (lấy cột phải nhất, so với JSON)' },
       ],
       pass: { kind: 'flag', key: '--layout' },
     },

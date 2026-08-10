@@ -86,6 +86,8 @@ Luồng thao tác:
   - `Option (Alt)+Delete` — xoá **1 đoạn** trước con trỏ, phân tách bởi `/` `.` `-` `_`… Ví dụ: `a/b/c` → `a/b/` → `a/b` → `a/` → `a`. `Alt+D` — xoá 1 đoạn sau con trỏ
   - `Ctrl+U` — xoá cả dòng; `Ctrl+K` — xoá từ con trỏ đến cuối dòng
   - `Ctrl+Z` — **hoàn tác** thao tác vừa rồi (khôi phục ký tự vừa xoá/gõ)
+  - `↑` (mũi tên lên) — **điền lại** giá trị mặc định/đã lưu vào ô để chỉnh sửa
+    (ví dụ khi đã xoá ô nhưng muốn lấy lại đường dẫn của lần trước rồi sửa)
 
 > Lưu ý: trên macOS, `Cmd+Z`/`Cmd+Delete` thường không được terminal gửi tới ứng
 > dụng — hãy dùng `Ctrl+Z` để hoàn tác và `Ctrl+U` để xoá cả dòng.

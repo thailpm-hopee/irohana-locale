@@ -81,11 +81,12 @@ export function segmentEnd(s, pos) {
  *   - Alt+D → delete the word after the cursor
  *   - Ctrl+U → delete the whole line · Ctrl+K → delete from cursor to end
  *   - Ctrl+Z → undo the last edit (restore just-deleted / typed characters)
+ *   - ↑ (Up) → refill the field with its default / last-saved value
  *
  * The parent owns the text (value/onChange); the cursor is local. Give the
  * component a stable `key` per input so cursor + undo history reset per field.
  */
-export function TextField({ value, onChange, onSubmit }) {
+export function TextField({ value, onChange, onSubmit, defaultValue }) {
   const [rawCursor, setCursor] = useState(value.length);
   const historyRef = useRef([]);
   const cursor = Math.min(Math.max(rawCursor, 0), value.length);
@@ -110,6 +111,14 @@ export function TextField({ value, onChange, onSubmit }) {
       if (prev) {
         setCursor(prev.cursor);
         onChange(prev.value);
+      }
+      return;
+    }
+
+    // ── refill with default / last-saved value: Up arrow ────────────
+    if (key.upArrow) {
+      if (defaultValue != null && defaultValue !== value) {
+        edit(defaultValue, defaultValue.length);
       }
       return;
     }
@@ -475,7 +484,7 @@ function SettingsScreen({ tools, settings, onChange, onDone }) {
   `;
 }
 
-function InputScreen({ tool, input, choices, index, total, draft, error, onChange, onSubmit, onSelect, onToggle }) {
+function InputScreen({ tool, input, choices, index, total, draft, defaultDraft, error, onChange, onSubmit, onSelect, onToggle }) {
   const cached = input.cache ? getCached(tool.id, input.name) : undefined;
   const showCached = cached != null && input.type !== 'select' && input.type !== 'multiselect';
 
@@ -484,7 +493,7 @@ function InputScreen({ tool, input, choices, index, total, draft, error, onChang
       ? '↑/↓ chọn · Enter xác nhận'
       : input.type === 'multiselect'
         ? '↑/↓ di chuyển · Space bật/tắt · Enter xác nhận'
-        : '←/→ · Ctrl+A/E đầu/cuối · Option+Delete xoá 1 đoạn · Ctrl+W xoá từ · Ctrl+U xoá dòng · Ctrl+Z hoàn tác · Enter';
+        : '←/→ · Ctrl+A/E đầu/cuối · Ctrl+W xoá từ · Ctrl+U xoá dòng · Ctrl+Z hoàn tác · ↑ điền lại giá trị mặc định · Enter';
 
   return html`
     <${Box} flexDirection="column">
@@ -517,7 +526,13 @@ function InputScreen({ tool, input, choices, index, total, draft, error, onChang
               />`
             : html`<${Box}>
                 <${Text} color="green">❯ <//>
-                <${TextField} key=${input.name} value=${draft} onChange=${onChange} onSubmit=${onSubmit} />
+                <${TextField}
+                  key=${input.name}
+                  value=${draft}
+                  defaultValue=${defaultDraft}
+                  onChange=${onChange}
+                  onSubmit=${onSubmit}
+                />
               <//>`}
       <//>
 
@@ -702,6 +717,8 @@ export function App({ tools }) {
   if (screen === 'input') {
     const input = tool.inputs[index];
     const choices = resolveChoices(input, values);
+    // The default/last-saved draft for this step — used by ↑ to refill the field.
+    const defaultDraft = initialDraft(tool, input, values);
     // Only count inputs actually shown for the given values, so the "x/y"
     // step counter stays truthful when a conditional step is skipped.
     const visible = tool.inputs.filter((inp) => !inp.when || inp.when(values));
@@ -713,6 +730,7 @@ export function App({ tools }) {
       index=${pos >= 0 ? pos : index}
       total=${visible.length}
       draft=${draft}
+      defaultDraft=${defaultDraft}
       error=${error}
       onChange=${setDraft}
       onSubmit=${submitDraft}

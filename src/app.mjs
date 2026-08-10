@@ -81,11 +81,12 @@ export function segmentEnd(s, pos) {
  *   - Alt+D → delete the word after the cursor
  *   - Ctrl+U → delete the whole line · Ctrl+K → delete from cursor to end
  *   - Ctrl+Z → undo the last edit (restore just-deleted / typed characters)
+ *   - ↑ (Up) → refill the field with its default / last-saved value
  *
  * The parent owns the text (value/onChange); the cursor is local. Give the
  * component a stable `key` per input so cursor + undo history reset per field.
  */
-export function TextField({ value, onChange, onSubmit }) {
+export function TextField({ value, onChange, onSubmit, defaultValue, onBack }) {
   const [rawCursor, setCursor] = useState(value.length);
   const historyRef = useRef([]);
   const cursor = Math.min(Math.max(rawCursor, 0), value.length);
@@ -110,6 +111,14 @@ export function TextField({ value, onChange, onSubmit }) {
       if (prev) {
         setCursor(prev.cursor);
         onChange(prev.value);
+      }
+      return;
+    }
+
+    // ── refill with default / last-saved value: Up arrow ────────────
+    if (key.upArrow) {
+      if (defaultValue != null && defaultValue !== value) {
+        edit(defaultValue, defaultValue.length);
       }
       return;
     }
@@ -181,8 +190,14 @@ export function TextField({ value, onChange, onSubmit }) {
       return;
     }
 
+    // Go back to the previous step: Esc.
+    if (key.escape) {
+      onBack?.();
+      return;
+    }
+
     // Ignore any other control/meta/navigation chords (Ctrl+C handled by Ink).
-    if (key.ctrl || key.meta || key.escape || key.upArrow || key.downArrow || key.tab) {
+    if (key.ctrl || key.meta || key.upArrow || key.downArrow || key.tab) {
       return;
     }
 
@@ -200,7 +215,7 @@ export function TextField({ value, onChange, onSubmit }) {
 }
 
 /** Vertical selectable list. items: [{label, value, description?}] */
-function SelectList({ items, initialIndex = 0, onSelect }) {
+function SelectList({ items, initialIndex = 0, onSelect, onBack }) {
   const [idx, setIdx] = useState(
     Math.min(Math.max(initialIndex, 0), Math.max(items.length - 1, 0))
   );
@@ -212,6 +227,8 @@ function SelectList({ items, initialIndex = 0, onSelect }) {
       setIdx((i) => (i + 1) % items.length);
     } else if (key.return) {
       onSelect(items[idx], idx);
+    } else if (key.escape && onBack) {
+      onBack();
     }
   });
 
@@ -234,10 +251,152 @@ function SelectList({ items, initialIndex = 0, onSelect }) {
   `;
 }
 
+/** Tri-state of the "All" row given the choices and current selection. */
+export function multiAllState(choices, selected) {
+  const set = new Set(selected);
+  const n = choices.filter((c) => set.has(c.value)).length;
+  return n === 0 ? 'none' : n === choices.length ? 'all' : 'some';
+}
+
+/** Next selection when the "All" row is toggled: all→none, else→all. */
+export function multiToggleAll(choices, selected) {
+  return multiAllState(choices, selected) === 'all' ? [] : choices.map((c) => c.value);
+}
+
+/**
+ * Multi-select checkbox list with a leading "Tất cả" (All) row for quick
+ * select-all / deselect-all. `choices`: [{label, value}]; `selected`: the array
+ * of chosen values (owned by the parent). Space toggles the row under the
+ * cursor; Enter submits.
+ *
+ * The All row is tri-state: [ ] none · [~] some (intermediate) · [x] all.
+ * Toggling it deselects everything when already all-selected, otherwise selects
+ * everything. Row 0 is the All row; rows 1..N are the individual languages.
+ */
+function MultiSelectList({ choices, selected, onToggle, onSubmit, onBack }) {
+  const [idx, setIdx] = useState(0);
+  const selectedSet = new Set(selected);
+  const hasBack = !!onBack;
+  const backIdx = choices.length + 1; // after All(0) + langs(1..N)
+  const rowCount = choices.length + 1 + (hasBack ? 1 : 0);
+
+  const selCount = choices.filter((c) => selectedSet.has(c.value)).length;
+  const allState = multiAllState(choices, selected);
+
+  useInput((input, key) => {
+    if (choices.length === 0) {
+      if (key.return) onSubmit();
+      else if (key.escape && onBack) onBack();
+      return;
+    }
+    if (key.upArrow || input === 'k') {
+      setIdx((i) => (i - 1 + rowCount) % rowCount);
+    } else if (key.downArrow || input === 'j') {
+      setIdx((i) => (i + 1) % rowCount);
+    } else if (key.escape && onBack) {
+      onBack();
+    } else if (input === ' ') {
+      if (hasBack && idx === backIdx) {
+        onBack();
+      } else if (idx === 0) {
+        // All row: collapse to none when everything is on, else select all.
+        onToggle(multiToggleAll(choices, selected));
+      } else {
+        const v = choices[idx - 1].value;
+        const next = new Set(selectedSet);
+        if (next.has(v)) next.delete(v);
+        else next.add(v);
+        // Emit in choice order so the list stays stable/deterministic.
+        onToggle(choices.filter((c) => next.has(c.value)).map((c) => c.value));
+      }
+    } else if (key.return) {
+      if (hasBack && idx === backIdx) onBack();
+      else onSubmit();
+    }
+  });
+
+  if (choices.length === 0) {
+    return html`<${Text} color="gray">(không phát hiện ngôn ngữ — Enter để tiếp tục)<//>`;
+  }
+
+  const allGlyph = allState === 'all' ? '[x]' : allState === 'some' ? '[~]' : '[ ]';
+  const allActive = idx === 0;
+
+  return html`
+    <${Box} flexDirection="column">
+      <${Text} color=${allActive ? 'cyan' : 'gray'} bold=${allActive}>
+        ${allActive ? '❯ ' : '  '}${allGlyph} Tất cả (${selCount}/${choices.length})
+      <//>
+      ${choices.map((c, i) => {
+        const active = idx === i + 1;
+        const on = selectedSet.has(c.value);
+        return html`
+          <${Text} key=${c.value} color=${active ? 'cyan' : undefined} bold=${active}>
+            ${active ? '❯ ' : '  '}${on ? '[x]' : '[ ]'} ${c.label}
+          <//>
+        `;
+      })}
+      ${hasBack
+        ? html`<${Text} color=${idx === backIdx ? 'cyan' : 'gray'} bold=${idx === backIdx}>
+            ${idx === backIdx ? '❯ ' : '  '}← Quay lại bước trước
+          <//>`
+        : null}
+    <//>
+  `;
+}
+
 // ── input helpers ───────────────────────────────────────────────────────────
 
+/** Resolve an input's choices, which may be a function of the collected values. */
+function resolveChoices(input, values) {
+  return typeof input.choices === 'function'
+    ? input.choices(values) || []
+    : input.choices || [];
+}
+
+/** Human-readable display of a committed value, for the prior-steps summary. */
+function displayValue(input, val, values) {
+  if (input.type === 'select') {
+    const c = resolveChoices(input, values).find((x) => x.value === val);
+    return c ? c.label : String(val);
+  }
+  if (input.type === 'multiselect') {
+    const chs = resolveChoices(input, values);
+    const arr = Array.isArray(val) ? val : [];
+    if (arr.length === 0) return '(không có)';
+    return arr.map((v) => (chs.find((x) => x.value === v) || {}).label || v).join(', ');
+  }
+  return String(val);
+}
+
+/**
+ * Index of the next input to display at/after `from` whose `when(values)`
+ * predicate passes (inputs with no `when` are always shown). Returns
+ * tool.inputs.length when there are no more inputs to show → time to run.
+ */
+function nextVisibleIndex(tool, from, values) {
+  for (let i = from; i < tool.inputs.length; i++) {
+    const inp = tool.inputs[i];
+    if (!inp.when || inp.when(values)) return i;
+  }
+  return tool.inputs.length;
+}
+
 /** Initial draft for an input: last cached value (if cacheable) else default. */
-function initialDraft(tool, input) {
+function initialDraft(tool, input, values = {}) {
+  // Multiselect draft is an array of selected values.
+  if (input.type === 'multiselect') {
+    const all = resolveChoices(input, values).map((c) => c.value);
+    if (input.cache) {
+      const cached = getCached(tool.id, input.name);
+      if (Array.isArray(cached)) {
+        const keep = cached.filter((v) => all.includes(v)); // drop stale codes
+        if (keep.length > 0) return keep;
+      }
+    }
+    return input.default === 'all' ? all : [];
+  }
+
   if (input.cache) {
     const cached = getCached(tool.id, input.name);
     if (cached != null) return String(cached);
@@ -361,45 +520,80 @@ function SettingsScreen({ tools, settings, onChange, onDone }) {
   `;
 }
 
-function InputScreen({ tool, input, index, total, draft, error, onChange, onSubmit, onSelect }) {
+function InputScreen({ tool, input, choices, index, total, draft, defaultDraft, answered, canGoBack, error, onChange, onSubmit, onSelect, onToggle, onBack }) {
   const cached = input.cache ? getCached(tool.id, input.name) : undefined;
+  const showCached = cached != null && input.type !== 'select' && input.type !== 'multiselect';
+
+  const backHint = canGoBack ? ' · Esc quay lại' : '';
+  const hint =
+    (input.type === 'select'
+      ? '↑/↓ chọn · Enter xác nhận'
+      : input.type === 'multiselect'
+        ? '↑/↓ di chuyển · Space bật/tắt · Enter xác nhận'
+        : '←/→ · Ctrl+A/E đầu/cuối · Ctrl+W xoá từ · Ctrl+U xoá dòng · Ctrl+Z hoàn tác · ↑ điền lại giá trị mặc định · Enter') +
+    backHint;
+
+  // A trailing "← Quay lại" item for list inputs (select), when a back step exists.
+  const selectItems = canGoBack ? [...choices, { value: '__back', label: '← Quay lại bước trước' }] : choices;
 
   return html`
     <${Box} flexDirection="column">
       <${Header} />
       <${Text} color="magenta" bold>▶ ${tool.title}<//>
+
+      ${answered && answered.length
+        ? html`<${Box} flexDirection="column" marginTop=${1}>
+            ${answered.map(
+              (a, i) =>
+                html`<${Text} key=${i} color="gray">  ✓ ${a.label}: <${Text} color="green">${a.text}<//><//>`
+            )}
+          <//>`
+        : null}
+
       <${Box} marginTop=${1}>
         <${Text}>Bước nhập ${index + 1}/${total}: <${Text} bold>${input.label}<//><//>
       <//>
       ${input.hint ? html`<${Text} color="gray">${input.hint}<//>` : null}
-      ${cached != null && input.type !== 'select'
+      ${showCached
         ? html`<${Text} color="yellow">Đã lưu lần trước: ${String(cached)} (Enter để dùng lại)<//>`
         : null}
 
       <${Box} marginTop=${1}>
         ${input.type === 'select'
           ? html`<${SelectList}
-              items=${input.choices}
+              items=${selectItems}
               initialIndex=${Math.max(
                 0,
-                input.choices.findIndex((c) => c.value === (cached ?? input.default))
+                selectItems.findIndex((c) => c.value === (cached ?? input.default))
               )}
-              onSelect=${(it) => onSelect(it.value)}
+              onSelect=${(it) => (it.value === '__back' ? onBack() : onSelect(it.value))}
+              onBack=${canGoBack ? onBack : undefined}
             />`
-          : html`<${Box}>
-              <${Text} color="green">❯ <//>
-              <${TextField} key=${input.name} value=${draft} onChange=${onChange} onSubmit=${onSubmit} />
-            <//>`}
+          : input.type === 'multiselect'
+            ? html`<${MultiSelectList}
+                choices=${choices}
+                selected=${Array.isArray(draft) ? draft : []}
+                onToggle=${onToggle}
+                onSubmit=${onSubmit}
+                onBack=${canGoBack ? onBack : undefined}
+              />`
+            : html`<${Box}>
+                <${Text} color="green">❯ <//>
+                <${TextField}
+                  key=${input.name}
+                  value=${draft}
+                  defaultValue=${defaultDraft}
+                  onChange=${onChange}
+                  onSubmit=${onSubmit}
+                  onBack=${canGoBack ? onBack : undefined}
+                />
+              <//>`}
       <//>
 
       ${error ? html`<${Box} marginTop=${1}><${Text} color="red">✖ ${error}<//><//>` : null}
 
       <${Box} marginTop=${1}>
-        <${Text} color="gray">
-          ${input.type === 'select'
-            ? '↑/↓ chọn · Enter xác nhận'
-            : '←/→ · Ctrl+A/E đầu/cuối · Option+Delete xoá 1 đoạn · Ctrl+W xoá từ · Ctrl+U xoá dòng · Ctrl+Z hoàn tác · Enter'}
-        <//>
+        <${Text} color="gray">${hint}<//>
       <//>
     <//>
   `;
@@ -470,12 +664,13 @@ export function App({ tools }) {
     setTool(t);
     setValues({});
     setError(null);
-    if (t.inputs.length === 0) {
+    const first = nextVisibleIndex(t, 0, {});
+    if (first >= t.inputs.length) {
       startRun(t, {});
       return;
     }
-    setIndex(0);
-    setDraft(initialDraft(t, t.inputs[0]));
+    setIndex(first);
+    setDraft(initialDraft(t, t.inputs[first], {}));
     setScreen('input');
   }
 
@@ -484,11 +679,11 @@ export function App({ tools }) {
     setValues(nextValues);
     if (input.cache) setCached(tool.id, input.name, value);
 
-    const nextIndex = index + 1;
-    if (nextIndex < tool.inputs.length) {
-      setIndex(nextIndex);
+    const next = nextVisibleIndex(tool, index + 1, nextValues);
+    if (next < tool.inputs.length) {
+      setIndex(next);
       setError(null);
-      setDraft(initialDraft(tool, tool.inputs[nextIndex]));
+      setDraft(initialDraft(tool, tool.inputs[next], nextValues));
       setScreen('input');
     } else {
       startRun(tool, nextValues);
@@ -497,7 +692,13 @@ export function App({ tools }) {
 
   function submitDraft() {
     const input = tool.inputs[index];
-    const { value, error: err } = resolveAndValidate(input, draft);
+    // Submitting an empty field reuses the default / last-saved value
+    // ("Enter để dùng lại"), instead of rejecting it as required.
+    let d = draft;
+    if (d == null || (typeof d === 'string' && d.trim() === '')) {
+      d = initialDraft(tool, input, values);
+    }
+    const { value, error: err } = resolveAndValidate(input, d);
     if (err) {
       setError(err);
       return;
@@ -507,6 +708,19 @@ export function App({ tools }) {
 
   function selectChoice(input, value) {
     commitValue(input, value);
+  }
+
+  /** Return to the previous visible step, restoring its committed value. */
+  function goBack() {
+    let i = index - 1;
+    while (i >= 0 && tool.inputs[i].when && !tool.inputs[i].when(values)) i--;
+    if (i < 0) return; // already at the first step
+    const prev = tool.inputs[i];
+    setIndex(i);
+    setError(null);
+    const prevVal = values[prev.name];
+    setDraft(prevVal != null ? prevVal : initialDraft(tool, prev, values));
+    setScreen('input');
   }
 
   function startRun(t, collected) {
@@ -575,16 +789,34 @@ export function App({ tools }) {
   }
   if (screen === 'input') {
     const input = tool.inputs[index];
+    const choices = resolveChoices(input, values);
+    // The default/last-saved draft for this step — used by ↑ to refill the field.
+    const defaultDraft = initialDraft(tool, input, values);
+    // Only count inputs actually shown for the given values, so the "x/y"
+    // step counter stays truthful when a conditional step is skipped.
+    const visible = tool.inputs.filter((inp) => !inp.when || inp.when(values));
+    const pos = visible.indexOf(input);
+    // Summary of the answers given in earlier (visible) steps, for tracking.
+    const answered = visible
+      .slice(0, Math.max(pos, 0))
+      .filter((inp) => inp.name in values)
+      .map((inp) => ({ label: inp.label, text: displayValue(inp, values[inp.name], values) }));
     return html`<${InputScreen}
       tool=${tool}
       input=${input}
-      index=${index}
-      total=${tool.inputs.length}
+      choices=${choices}
+      index=${pos >= 0 ? pos : index}
+      total=${visible.length}
       draft=${draft}
+      defaultDraft=${defaultDraft}
+      answered=${answered}
+      canGoBack=${pos > 0}
       error=${error}
       onChange=${setDraft}
       onSubmit=${submitDraft}
       onSelect=${(value) => selectChoice(input, value)}
+      onToggle=${setDraft}
+      onBack=${goBack}
     />`;
   }
   if (screen === 'running') {

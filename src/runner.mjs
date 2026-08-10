@@ -54,13 +54,25 @@ export function runTool({ entryPath, cwd, args, env, onLine, onExit }) {
  * - pass.kind === 'env'  → set env[key] = value
  * - pass.kind === 'flag' → push `${key}=${value}`
  * - pass.kind === 'arg'  → push value (positional)
+ *
+ * Array values (multiselect) are joined with commas; an empty array is skipped
+ * so the flag is omitted entirely (the tool then applies its own default).
  */
 export function buildInvocation(tool, values) {
   const env = { ...process.env };
   const args = [];
 
   for (const input of tool.inputs) {
-    const value = values[input.name];
+    // Skip inputs hidden by their `when` predicate (e.g. a step the user
+    // navigated past and then made irrelevant by going back and changing an
+    // earlier answer) — otherwise a stale value would leak into the args.
+    if (input.when && !input.when(values)) continue;
+
+    let value = values[input.name];
+    if (Array.isArray(value)) {
+      if (value.length === 0) continue;
+      value = value.join(',');
+    }
     if (value == null || value === '') continue;
 
     const pass = input.pass || { kind: 'arg' };

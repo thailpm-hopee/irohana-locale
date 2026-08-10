@@ -70,14 +70,19 @@ Luồng thao tác:
      dẫn đầy đủ sẽ tự điền, kể cả khi có dấu cách), rồi nhấn `Enter`. Đường dẫn
      dán vào được tự chuẩn hoá (bỏ dấu nháy, bỏ ký tự escape `\ `, mở rộng `~`).
    - **Lựa chọn:** dùng `↑`/`↓` rồi `Enter`.
-   - **Văn bản:** gõ trực tiếp; để trống để dùng giá trị mặc định.
+   - **Văn bản:** gõ trực tiếp; **để trống rồi `Enter` sẽ dùng giá trị mặc định /
+     đã lưu** (không báo lỗi bắt buộc).
    - Nếu đã chạy trước đó, giá trị cũ hiện sẵn — chỉ cần `Enter` để dùng lại.
+   - **Các bước đã nhập** được liệt kê (`✓ Nhãn: giá trị`) ở đầu mỗi màn hình để
+     bạn theo dõi.
+   - **Quay lại bước trước:** nhấn `Esc`, hoặc chọn mục cuối **`← Quay lại bước
+     trước`** trong các bước dạng danh sách/nhiều lựa chọn.
 3. **Xem log trực tiếp** khi công cụ đang chạy (có spinner ⠋).
 4. **Kết thúc:** hiện dấu `✔` (thành công) hoặc `✖` (lỗi) kèm đường dẫn kết quả.
    Nhấn `Enter` để về menu, `Ctrl+C` để thoát.
 
 **Phím tắt:**
-- Danh sách: `↑`/`↓` di chuyển · `Enter` xác nhận · `Ctrl+C` thoát.
+- Danh sách: `↑`/`↓` di chuyển · `Enter` xác nhận · `Esc` quay lại bước trước · `Ctrl+C` thoát.
 - Ô nhập đường dẫn (soạn thảo như terminal chuẩn, có con trỏ di chuyển được):
   - `←`/`→` hoặc `Ctrl+B`/`Ctrl+F` — di chuyển con trỏ
   - `Ctrl+A` / `Ctrl+E` — về đầu / cuối dòng
@@ -86,6 +91,9 @@ Luồng thao tác:
   - `Option (Alt)+Delete` — xoá **1 đoạn** trước con trỏ, phân tách bởi `/` `.` `-` `_`… Ví dụ: `a/b/c` → `a/b/` → `a/b` → `a/` → `a`. `Alt+D` — xoá 1 đoạn sau con trỏ
   - `Ctrl+U` — xoá cả dòng; `Ctrl+K` — xoá từ con trỏ đến cuối dòng
   - `Ctrl+Z` — **hoàn tác** thao tác vừa rồi (khôi phục ký tự vừa xoá/gõ)
+  - `↑` (mũi tên lên) — **điền lại** giá trị mặc định/đã lưu vào ô để chỉnh sửa
+    (ví dụ khi đã xoá ô nhưng muốn lấy lại đường dẫn của lần trước rồi sửa)
+  - `Esc` — **quay lại bước trước** (giá trị đã nhập được khôi phục để sửa)
 
 > Lưu ý: trên macOS, `Cmd+Z`/`Cmd+Delete` thường không được terminal gửi tới ứng
 > dụng — hãy dùng `Ctrl+Z` để hoàn tác và `Ctrl+U` để xoá cả dòng.
@@ -120,7 +128,30 @@ quả vào `<thư-mục-dự-án>/irl-output/<tên-công-cụ>/`.
 |--------|------|---------|
 | Thư mục dự án | thư mục | Kéo-thả repo (chứa `src/i18n/locales`) |
 | File Excel | file `.xlsx` | Kéo-thả file dịch thuật |
-| Bố cục Excel | lựa chọn | `paired` (2 cột/ngôn ngữ, mặc định) hoặc `single` (1 cột/ngôn ngữ) |
+| Bố cục Excel | lựa chọn | `paired` (2 cột/ngôn ngữ, mặc định), `single` (1 cột/ngôn ngữ), hoặc `multi` (nhiều cột/ngôn ngữ) |
+
+**Bố cục (layout):**
+
+- **`paired`** — mỗi ngôn ngữ có 2 cột cố định *current* + *updated*. Chỉ áp
+  dụng thay đổi khi *updated* khác *current* (so sánh giữa 2 cột Excel). Yêu cầu
+  vị trí cột cố định và **giống nhau** cho mọi ngôn ngữ.
+- **`single`** — mỗi ngôn ngữ có đúng 1 cột; giá trị trong cột được so trực tiếp
+  với file JSON locale. Cột được nhận diện qua header dạng `"<lang> (ngày)"`.
+- **`multi`** — mỗi ngôn ngữ có thể có **nhiều cột** (ví dụ 1 cột gốc + nhiều đợt
+  chỉnh sửa) và **số cột giữa các ngôn ngữ có thể khác nhau**. Cột được nhận diện
+  qua header (`"<lang> (…)"`); giá trị áp dụng là **ô được duyệt ở cột phải nhất**
+  (bỏ qua ô trống, `未チェック`, ô gạch ngang), so **trực tiếp với JSON locale**.
+  Vì lấy JSON làm chuẩn nên chạy nhiều lần liên tiếp (chưa commit) vẫn đúng —
+  không cần vòng xuất "merged Excel" như `paired`.
+
+  **Chọn ngôn ngữ (chỉ ở `multi`):** sau khi chọn `multi`, TUI hiện thêm một
+  bước cho phép **chọn ngôn ngữ nào sẽ ghi vào `common.json`** dựa trên các ngôn
+  ngữ tìm thấy trong file Excel. Mặc định **chọn tất cả**; dùng `Space` để bỏ
+  chọn ngôn ngữ không muốn cập nhật (lựa chọn được **ghi nhớ** cho lần sau).
+  Không bắt buộc phải đủ mọi ngôn ngữ — công cụ sẽ in danh sách ngôn ngữ **không
+  được cập nhật** so với JSON (theo mã 2 ký tự): ngôn ngữ bị bỏ chọn, và ngôn ngữ
+  có trong JSON nhưng thiếu cột trong Excel. Chạy trực tiếp thì dùng cờ
+  `--languages=vi,en,ja` (bỏ cờ = cập nhật mọi ngôn ngữ phát hiện được).
 
 **Kết quả:** mặc định công cụ **chỉ cập nhật các file `common.json`** (tại chỗ) —
 không tạo thư mục `irl-output`. Nếu bật *Ghi file kết quả* trong
@@ -133,7 +164,7 @@ Chạy trực tiếp không cần TUI:
 
 ```bash
 node tools/i18n-update/run.js "/đường-dẫn/file.xlsx" \
-  --project-root="/đường-dẫn/repo" [--layout=paired|single]
+  --project-root="/đường-dẫn/repo" [--layout=paired|single|multi] [--languages=vi,en,ja]
 ```
 
 ### 2. Xuất gói localization (ZIP) — `export-localization`

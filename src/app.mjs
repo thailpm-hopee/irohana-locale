@@ -234,14 +234,35 @@ function SelectList({ items, initialIndex = 0, onSelect }) {
   `;
 }
 
+/** Tri-state of the "All" row given the choices and current selection. */
+export function multiAllState(choices, selected) {
+  const set = new Set(selected);
+  const n = choices.filter((c) => set.has(c.value)).length;
+  return n === 0 ? 'none' : n === choices.length ? 'all' : 'some';
+}
+
+/** Next selection when the "All" row is toggled: all→none, else→all. */
+export function multiToggleAll(choices, selected) {
+  return multiAllState(choices, selected) === 'all' ? [] : choices.map((c) => c.value);
+}
+
 /**
- * Multi-select checkbox list. `choices`: [{label, value}]; `selected`: the
- * array of chosen values (owned by the parent). Space toggles the row under the
+ * Multi-select checkbox list with a leading "Tất cả" (All) row for quick
+ * select-all / deselect-all. `choices`: [{label, value}]; `selected`: the array
+ * of chosen values (owned by the parent). Space toggles the row under the
  * cursor; Enter submits.
+ *
+ * The All row is tri-state: [ ] none · [~] some (intermediate) · [x] all.
+ * Toggling it deselects everything when already all-selected, otherwise selects
+ * everything. Row 0 is the All row; rows 1..N are the individual languages.
  */
 function MultiSelectList({ choices, selected, onToggle, onSubmit }) {
   const [idx, setIdx] = useState(0);
   const selectedSet = new Set(selected);
+  const rowCount = choices.length + 1; // +1 for the All row
+
+  const selCount = choices.filter((c) => selectedSet.has(c.value)).length;
+  const allState = multiAllState(choices, selected);
 
   useInput((input, key) => {
     if (choices.length === 0) {
@@ -249,16 +270,21 @@ function MultiSelectList({ choices, selected, onToggle, onSubmit }) {
       return;
     }
     if (key.upArrow || input === 'k') {
-      setIdx((i) => (i - 1 + choices.length) % choices.length);
+      setIdx((i) => (i - 1 + rowCount) % rowCount);
     } else if (key.downArrow || input === 'j') {
-      setIdx((i) => (i + 1) % choices.length);
+      setIdx((i) => (i + 1) % rowCount);
     } else if (input === ' ') {
-      const v = choices[idx].value;
-      const next = new Set(selectedSet);
-      if (next.has(v)) next.delete(v);
-      else next.add(v);
-      // Emit in choice order so the list stays stable/deterministic.
-      onToggle(choices.filter((c) => next.has(c.value)).map((c) => c.value));
+      if (idx === 0) {
+        // All row: collapse to none when everything is on, else select all.
+        onToggle(multiToggleAll(choices, selected));
+      } else {
+        const v = choices[idx - 1].value;
+        const next = new Set(selectedSet);
+        if (next.has(v)) next.delete(v);
+        else next.add(v);
+        // Emit in choice order so the list stays stable/deterministic.
+        onToggle(choices.filter((c) => next.has(c.value)).map((c) => c.value));
+      }
     } else if (key.return) {
       onSubmit();
     }
@@ -268,10 +294,16 @@ function MultiSelectList({ choices, selected, onToggle, onSubmit }) {
     return html`<${Text} color="gray">(không phát hiện ngôn ngữ — Enter để tiếp tục)<//>`;
   }
 
+  const allGlyph = allState === 'all' ? '[x]' : allState === 'some' ? '[~]' : '[ ]';
+  const allActive = idx === 0;
+
   return html`
     <${Box} flexDirection="column">
+      <${Text} color=${allActive ? 'cyan' : 'gray'} bold=${allActive}>
+        ${allActive ? '❯ ' : '  '}${allGlyph} Tất cả (${selCount}/${choices.length})
+      <//>
       ${choices.map((c, i) => {
-        const active = i === idx;
+        const active = idx === i + 1;
         const on = selectedSet.has(c.value);
         return html`
           <${Text} key=${c.value} color=${active ? 'cyan' : undefined} bold=${active}>

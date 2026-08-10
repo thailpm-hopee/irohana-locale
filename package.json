@@ -27,7 +27,10 @@
     "README.md"
   ],
   "scripts": {
-    "start": "node bin/irl.mjs"
+    "start": "node bin/irl.mjs",
+    "build": "node scripts/check-syntax.mjs",
+    "test": "node --test",
+    "prepare": "husky"
   },
   "dependencies": {
     "archiver": "^7.0.1",
@@ -39,6 +42,7 @@
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
+    "husky": "^9.1.7",
     "ink-testing-library": "^4.0.0"
   }
 }

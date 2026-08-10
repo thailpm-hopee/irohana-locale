@@ -29,6 +29,31 @@ const LANG_COLUMNS = {
 // Known language codes (single source of truth derived from LANG_COLUMNS).
 const LANG_CODES = Object.keys(LANG_COLUMNS);
 
+// Vietnamese display names per code, for a friendlier UI label. Codes not
+// listed here fall back to showing just the raw code (see languageLabel).
+const LANG_NAMES = {
+  ja: 'Tiếng Nhật',
+  vi: 'Tiếng Việt',
+  my: 'Tiếng Miến Điện',
+  id: 'Tiếng Indonesia',
+  en: 'Tiếng Anh',
+  ne: 'Tiếng Nepal',
+  km: 'Tiếng Khmer',
+  mn: 'Tiếng Mông Cổ',
+  th: 'Tiếng Thái',
+  tl: 'Tiếng Tagalog',
+};
+
+/**
+ * A human label for a language code: "ja (Tiếng Nhật)" when the name is known,
+ * otherwise just the raw code (e.g. a newly added language). Keeps the code
+ * visible either way so it always maps back to the locale folder name.
+ */
+function languageLabel(code) {
+  const name = LANG_NAMES[code];
+  return name ? `${code} (${name})` : code;
+}
+
 /**
  * Detect language columns from a header row for the header-driven layouts
  * (single / multi). A header cell belongs to a language when it starts with a
@@ -81,4 +106,11 @@ function detectExcelLanguages(excelPath) {
   }
 }
 
-module.exports = { LANG_COLUMNS, LANG_CODES, detectLanguageColumns, detectExcelLanguages };
+module.exports = {
+  LANG_COLUMNS,
+  LANG_CODES,
+  LANG_NAMES,
+  languageLabel,
+  detectLanguageColumns,
+  detectExcelLanguages,
+};

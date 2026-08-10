@@ -1,6 +1,6 @@
 'use strict';
 
-const { detectExcelLanguages } = require('./languages');
+const { detectExcelLanguages, languageLabel } = require('./languages');
 
 /**
  * TUI manifest for the "i18n update from Excel" pipeline.
@@ -60,8 +60,10 @@ module.exports = {
       // Only for the multi layout, and only when the Excel actually has
       // detectable language columns (otherwise skip and update everything).
       when: (v) => v.layout === 'multi' && detectExcelLanguages(v.excel).length > 0,
-      // Dynamic choices: the languages found in the chosen Excel file.
-      choices: (v) => detectExcelLanguages(v.excel).map((code) => ({ value: code, label: code })),
+      // Dynamic choices: the languages found in the chosen Excel file, labelled
+      // with their Vietnamese name (unknown codes show the raw code).
+      choices: (v) =>
+        detectExcelLanguages(v.excel).map((code) => ({ value: code, label: languageLabel(code) })),
       pass: { kind: 'flag', key: '--languages' },
     },
   ],

@@ -13,8 +13,10 @@
  *   (d) i18n-transformed-check.xlsx  — same report as Excel (one sheet per language)
  *
  * Detection logic depends on --layout:
- *   - paired: Updated column not empty AND differs from Current → update;
- *             key missing from locale JSON → new key (isNewKey: true).
+ *   - paired: compares WITHIN the Excel only — Updated column not empty AND
+ *             differs from Current → update. The locale JSON is consulted only
+ *             to add a key that is missing (isNewKey: true), never for the
+ *             update decision itself.
  *   - single: the single per-language column IS the desired value; compared
  *             against the locale JSON (the source of truth).
  *   - multi:  each language has one or more columns (detected from the header),
@@ -457,6 +459,14 @@ function detectChanges({ rows, localeData, layout, singleColMap, multiColMap, st
 
     // -----------------------------------------------------------------------
     // Paired layout (legacy): "current" + "updated" column per language.
+    //
+    // The update decision compares ONLY the two Excel cells in this row
+    // (updated vs current) — the locale JSON is NOT consulted for it. The JSON
+    // is only checked for *existence* (Case 2) to add a key that is missing.
+    // Consequence: `current` is ASSUMED to mirror the JSON. If it has gone
+    // stale (e.g. a prior run changed the JSON but the sheet wasn't refreshed),
+    // a row where updated == current is skipped even if the JSON differs.
+    // The `single`/`multi` layouts avoid this by diffing against the JSON.
     // -----------------------------------------------------------------------
     for (const [lang, cols] of Object.entries(LANG_COLUMNS)) {
       const rawCurrent = String(row[cols.current] ?? '');

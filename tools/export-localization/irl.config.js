@@ -1,5 +1,7 @@
 'use strict';
 
+const { validateLocaleRoot } = require('../_shared/locale-structure');
+
 /**
  * TUI manifest for the "export localization" pipeline.
  */
@@ -18,6 +20,7 @@ module.exports = {
       hint: 'Kéo-thả thư mục gốc của repo vào đây rồi Enter.',
       required: true,
       cache: true,
+      validate: (v) => validateLocaleRoot(v).error || null,
       pass: { kind: 'env', key: 'IRL_PROJECT_ROOT' },
     },
   ],

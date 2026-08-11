@@ -698,7 +698,7 @@ export function App({ tools }) {
     if (d == null || (typeof d === 'string' && d.trim() === '')) {
       d = initialDraft(tool, input, values);
     }
-    const { value, error: err } = resolveAndValidate(input, d);
+    const { value, error: err } = resolveAndValidate(input, d, values);
     if (err) {
       setError(err);
       return;

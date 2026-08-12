@@ -18,6 +18,7 @@
 
 const path = require('path');
 const fs = require('fs');
+const { validateLocaleRoot } = require('./locale-structure');
 
 /** Read `--project-root=...` from argv, if present. */
 function projectRootFromArgv(argv) {
@@ -28,6 +29,8 @@ function projectRootFromArgv(argv) {
 /**
  * Resolve and validate the project root. Exits the process with a clear
  * Vietnamese message when it is missing or does not look like the app repo.
+ * The structure check is shared with the TUI (see locale-structure.js) so both
+ * agree on what a valid root is.
  */
 function resolveProjectRoot(argv) {
   const raw = projectRootFromArgv(argv) || process.env.IRL_PROJECT_ROOT || '';
@@ -38,10 +41,10 @@ function resolveProjectRoot(argv) {
   }
 
   const root = path.resolve(raw.trim());
-  const localesDir = path.join(root, 'src', 'i18n', 'locales');
-  if (!fs.existsSync(localesDir)) {
-    console.error(`❌ Không tìm thấy "src/i18n/locales" trong thư mục dự án: ${root}`);
-    console.error('   Hãy chọn đúng thư mục gốc của dự án (repo chứa locales).');
+  const result = validateLocaleRoot(root);
+  if (!result.ok) {
+    console.error(`❌ ${result.error}`);
+    console.error(`   (Thư mục dự án: ${root})`);
     process.exit(1);
   }
   return root;

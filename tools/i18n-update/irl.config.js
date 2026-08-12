@@ -1,9 +1,15 @@
 'use strict';
 
 const { detectExcelLanguages, languageLabel } = require('./languages');
+const { validateExcelForLayout } = require('./validate-excel');
+const { validateLocaleRoot } = require('../_shared/locale-structure');
 
 /**
  * TUI manifest for the "i18n update from Excel" pipeline.
+ *
+ * Step order matters: `layout` is asked BEFORE `excel` so the Excel file can be
+ * validated against the chosen layout's expected structure (and the language
+ * picker can read the file that follows).
  */
 module.exports = {
   id: 'i18n-update',
@@ -24,16 +30,9 @@ module.exports = {
       hint: 'Kéo-thả thư mục gốc của repo vào đây rồi Enter.',
       required: true,
       cache: true,
+      // Deep structure check (has src/i18n/locales + ≥1 <lang>/common.json).
+      validate: (v) => validateLocaleRoot(v).error || null,
       pass: { kind: 'env', key: 'IRL_PROJECT_ROOT' },
-    },
-    {
-      name: 'excel',
-      type: 'file',
-      label: 'File Excel dịch thuật (.xlsx)',
-      hint: 'Kéo-thả file Excel vào đây rồi Enter.',
-      required: true,
-      cache: true,
-      pass: { kind: 'arg' },
     },
     {
       name: 'layout',
@@ -48,6 +47,17 @@ module.exports = {
         { value: 'multi', label: 'Multi — nhiều cột/ngôn ngữ (lấy cột phải nhất, so với JSON)' },
       ],
       pass: { kind: 'flag', key: '--layout' },
+    },
+    {
+      name: 'excel',
+      type: 'file',
+      label: 'File Excel dịch thuật (.xlsx)',
+      hint: 'Kéo-thả file Excel vào đây rồi Enter.',
+      required: true,
+      cache: true,
+      // Validate the file against the layout picked in the previous step.
+      validate: (v, values) => validateExcelForLayout(v, values.layout).error || null,
+      pass: { kind: 'arg' },
     },
     {
       name: 'languages',

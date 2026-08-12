@@ -47,15 +47,23 @@ export function validatePath(p, type) {
 
 /**
  * Resolve a raw draft value for a given input definition and validate it.
- * Returns { value } on success or { error } on failure.
+ * `values` is the map of already-collected step values, so an input's optional
+ * `validate(value, values)` hook can cross-check against earlier answers (e.g.
+ * validating the Excel file against the chosen layout).
+ *
+ * Domain-specific rules live in each tool's `irl.config.js` via `validate`
+ * (a Vietnamese error string, or null/undefined when valid) — this keeps
+ * paths.mjs generic. Returns { value } on success or { error } on failure.
  */
-export function resolveAndValidate(input, draft) {
+export function resolveAndValidate(input, draft, values = {}) {
   // Multiselect: draft is an array of chosen values.
   if (input.type === 'multiselect') {
     const arr = Array.isArray(draft) ? draft : [];
     if (input.required && arr.length === 0) {
       return { error: 'Chọn ít nhất 1 ngôn ngữ (Space để bật/tắt)' };
     }
+    const verr = runValidate(input, arr, values);
+    if (verr) return { error: verr };
     return { value: arr };
   }
 
@@ -74,15 +82,25 @@ export function resolveAndValidate(input, draft) {
     const err = validatePath(v, input.type);
     if (err) return { error: err };
     v = path.resolve(v);
-
-    // Project-root inputs must actually be the app repo.
-    if (input.name === 'projectRoot') {
-      const localesPath = path.join(v, 'src', 'i18n', 'locales');
-      if (!fs.existsSync(localesPath)) {
-        return { error: 'Thư mục dự án không hợp lệ (thiếu src/i18n/locales)' };
-      }
-    }
   }
 
+  // Run the input's own domain validator (if any) against the resolved value.
+  const verr = runValidate(input, v, values);
+  if (verr) return { error: verr };
+
   return { value: v };
+}
+
+/**
+ * Invoke an input's optional `validate(value, values)` hook. Returns the error
+ * string it produced, or null when valid. A throw inside the validator is
+ * surfaced as an error message rather than crashing the TUI.
+ */
+function runValidate(input, value, values) {
+  if (typeof input.validate !== 'function') return null;
+  try {
+    return input.validate(value, values) || null;
+  } catch (err) {
+    return `Không kiểm tra được giá trị: ${err.message}`;
+  }
 }

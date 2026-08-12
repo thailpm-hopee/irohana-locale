@@ -183,6 +183,7 @@ mockExam.tips.tip2
 mockExam.tips.tip3
 mockExam.startButton
 mockExam.history.title
+mockExam.history.title_empty
 mockExam.history.empty
 mockExam.history.passed
 mockExam.history.failed
